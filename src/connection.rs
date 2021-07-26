@@ -1,6 +1,6 @@
-use uuid::Uuid;
 use chrono::NaiveDateTime;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 pub const ENDPOINT: &str = "https://api.xero.com/connections";
 

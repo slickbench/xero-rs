@@ -1,13 +1,10 @@
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ErrorResponse {
+pub struct ErrorResponse {}
 
-}
-
-impl oauth2::ErrorResponse for ErrorResponse {
-}
+impl oauth2::ErrorResponse for ErrorResponse {}
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -15,7 +12,7 @@ pub enum Error {
     Request(reqwest::Error),
 
     #[error("error decoding response: {0:?}")]
-    ResponseDecode(serde_json::Error)
+    ResponseDecode(serde_json::Error),
 }
 
 impl From<reqwest::Error> for Error {

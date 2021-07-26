@@ -1,18 +1,27 @@
 use std::time::Duration;
 
-use oauth2::{RefreshToken, StandardRevocableToken, basic::{BasicTokenIntrospectionResponse, BasicTokenType}};
-use serde::{Serialize, Deserialize};
+use oauth2::{
+    basic::{BasicTokenIntrospectionResponse, BasicTokenType},
+    RefreshToken, StandardRevocableToken,
+};
+use serde::{Deserialize, Serialize};
 
 use crate::error::ErrorResponse;
 
 /// Stores the OAuth2 client ID and client secret.
 #[derive(Debug, Clone)]
-pub struct KeyPair(pub(crate) oauth2::ClientId, pub(crate) Option<oauth2::ClientSecret>);
+pub struct KeyPair(
+    pub(crate) oauth2::ClientId,
+    pub(crate) Option<oauth2::ClientSecret>,
+);
 
 impl KeyPair {
     /// Creates a new `KeyPair` from the provided `client_id` and `client_secret` strings.
     pub fn new(client_id: String, client_secret: Option<String>) -> Self {
-        Self(oauth2::ClientId::new(client_id), client_secret.map(oauth2::ClientSecret::new))
+        Self(
+            oauth2::ClientId::new(client_id),
+            client_secret.map(oauth2::ClientSecret::new),
+        )
     }
 
     /// Creates a new `KeyPair` from `XERO_CLIENT_ID` and `XERO_CLIENT_SECRET` environment variables.
@@ -22,12 +31,21 @@ impl KeyPair {
     pub fn from_env() -> Self {
         Self(
             oauth2::ClientId::new(std::env::var("XERO_CLIENT_ID").expect("XERO_CLIENT_ID not set")),
-            std::env::var("XERO_CLIENT_SECRET").ok().map(oauth2::ClientSecret::new)
+            std::env::var("XERO_CLIENT_SECRET")
+                .ok()
+                .map(oauth2::ClientSecret::new),
         )
     }
 }
 
-pub type OAuthClient = oauth2::Client<ErrorResponse, TokenResponse, BasicTokenType, BasicTokenIntrospectionResponse, StandardRevocableToken, ErrorResponse>;
+pub type OAuthClient = oauth2::Client<
+    ErrorResponse,
+    TokenResponse,
+    BasicTokenType,
+    BasicTokenIntrospectionResponse,
+    StandardRevocableToken,
+    ErrorResponse,
+>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TokenResponse {
@@ -35,7 +53,7 @@ pub struct TokenResponse {
     id_token: Option<String>,
     expires_in: u64,
     token_type: BasicTokenType,
-    refresh_token: Option<RefreshToken>
+    refresh_token: Option<RefreshToken>,
 }
 
 impl oauth2::TokenResponse<BasicTokenType> for TokenResponse {
@@ -77,7 +95,7 @@ pub struct IdToken {
     email: String,
     given_name: String,
     family_name: String,
-    amr: Vec<String>
+    amr: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -94,6 +112,5 @@ pub struct AccessToken {
     global_session_id: String,
     jti: String,
     scope: Vec<String>,
-    amr: Vec<String>
+    amr: Vec<String>,
 }
-
