@@ -1,7 +1,13 @@
+use std::str::FromStr;
+
 use serde::{Deserialize, Serialize};
+use url::Url;
 use uuid::Uuid;
 
-use crate::{error::Result, Client};
+use crate::{
+    error::{Error, Result},
+    Client,
+};
 
 pub const ENDPOINT: &str = "https://api.xero.com/api.xro/2.0/Contacts";
 
@@ -50,4 +56,14 @@ struct ListResponse {
 pub async fn list(client: &Client) -> Result<Vec<Contact>> {
     let response: ListResponse = client.get(ENDPOINT, Vec::<String>::default()).await?;
     Ok(response.contacts)
+}
+
+/// Retrieve a single contact by it's `contact_id`.
+#[instrument(skip(client))]
+pub async fn get(client: &Client, contact_id: Uuid) -> Result<Contact> {
+    let endpoint = Url::from_str(ENDPOINT)
+        .and_then(|endpoint| endpoint.join(&contact_id.to_string()))
+        .map_err(|_| Error::InvalidEndpoint)?;
+    let response: ListResponse = client.get(endpoint, Vec::<String>::default()).await?;
+    response.contacts.into_iter().next().ok_or(Error::NotFound)
 }

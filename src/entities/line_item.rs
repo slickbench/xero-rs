@@ -19,7 +19,7 @@ pub struct LineItem {
     quantity: f64,
     unit_amount: f64,
     item_code: Option<String>,
-    account_code: String,
+    account_code: Option<String>,
     #[serde(rename = "LineItemID")]
     line_item_id: Uuid,
     tax_type: String,

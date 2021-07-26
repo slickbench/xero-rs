@@ -24,5 +24,14 @@ This library is in very early days. This has been implemented so far:
 
 - OAuth2 Authentication (Client Credentials)
 - List authorized connections (tennants)
-- List invoices
-- List contacts
+- Quotes
+  - List
+  - Get by ID
+- Invoices
+  - List
+  - Get by ID
+- Purchase Orders
+  - List
+  - Get by ID
+- Contacts
+  - List
