@@ -79,6 +79,7 @@ impl Client {
         Ok(self
             .http_client
             .get(endpoint)
+            .header(header::ACCEPT, "application/json")
             .query(&query)
             .send()
             .await?
