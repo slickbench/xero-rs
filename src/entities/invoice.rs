@@ -8,6 +8,7 @@ use uuid::Uuid;
 use crate::{
     contact::Contact,
     error::{Error, Result},
+    line_item::{LineAmountType, LineItem},
     Client,
 };
 
@@ -31,30 +32,6 @@ pub enum Status {
     Authorised,
     Paid,
     Voided,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum LineAmountType {
-    Exclusive,
-    Inclusive,
-    NoTax,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct LineItem {
-    description: String,
-    quantity: f64,
-    unit_amount: f64,
-    item_code: Option<String>,
-    account_code: String,
-    #[serde(rename = "LineItemID")]
-    line_item_id: Uuid,
-    tax_type: String,
-    tax_amount: f64,
-    line_amount: f64,
-    discount_rate: Option<f64>,
-    // tracking
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -114,7 +91,7 @@ pub async fn list(client: &Client) -> Result<Vec<Invoice>> {
     Ok(response.invoices)
 }
 
-/// Retrieve a single invoice by an `invoice_id`.
+/// Retrieve a single invoice by it's `invoice_id`.
 #[instrument(skip(client))]
 pub async fn get(client: &Client, invoice_id: Uuid) -> Result<Invoice> {
     let endpoint = Url::from_str(ENDPOINT)
