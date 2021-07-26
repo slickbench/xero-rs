@@ -6,6 +6,7 @@ pub struct Response {}
 
 impl oauth2::ErrorResponse for Response {}
 
+/// Errors that can occur when interacting with the Xero API.
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("error making request: {0:?}")]

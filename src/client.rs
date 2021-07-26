@@ -1,8 +1,10 @@
+use core::fmt;
+
 use oauth2::TokenResponse;
-use reqwest::header;
+use reqwest::{header, IntoUrl};
+use serde::{de::DeserializeOwned, Serialize};
 use url::Url;
 
-use crate::connection::{self, Connection};
 use crate::error::{self, Result};
 use crate::oauth::{KeyPair, OAuthClient};
 
@@ -67,10 +69,20 @@ impl Client {
         })
     }
 
-    /// Retrieve a list of authorized connections (tennants).
-    #[instrument(skip(self))]
-    pub async fn get_connections(&self) -> Result<Vec<Connection>> {
-        let res = self.http_client.get(connection::ENDPOINT).send().await?;
-        Ok(res.json().await?)
+    /// Perform a `GET` request against the API.
+    #[instrument(skip(self, query))]
+    pub async fn get<'a, R: DeserializeOwned, U: IntoUrl + fmt::Debug, T: Serialize + Sized>(
+        &self,
+        endpoint: U,
+        query: T,
+    ) -> Result<R> {
+        Ok(self
+            .http_client
+            .get(endpoint)
+            .query(&query)
+            .send()
+            .await?
+            .json()
+            .await?)
     }
 }
