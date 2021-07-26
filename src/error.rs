@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ErrorResponse {}
+pub struct Response {}
 
-impl oauth2::ErrorResponse for ErrorResponse {}
+impl oauth2::ErrorResponse for Response {}
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -27,4 +27,4 @@ impl From<serde_json::Error> for Error {
     }
 }
 
-pub type XeroResult<O> = Result<O, Error>;
+pub type Result<O> = std::result::Result<O, Error>;

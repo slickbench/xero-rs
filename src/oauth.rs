@@ -6,9 +6,9 @@ use oauth2::{
 };
 use serde::{Deserialize, Serialize};
 
-use crate::error::ErrorResponse;
+use crate::error;
 
-/// Stores the OAuth2 client ID and client secret.
+/// Stores the OAuth 2 client ID and client secret.
 #[derive(Debug, Clone)]
 pub struct KeyPair(
     pub(crate) oauth2::ClientId,
@@ -17,6 +17,7 @@ pub struct KeyPair(
 
 impl KeyPair {
     /// Creates a new `KeyPair` from the provided `client_id` and `client_secret` strings.
+    #[must_use]
     pub fn new(client_id: String, client_secret: Option<String>) -> Self {
         Self(
             oauth2::ClientId::new(client_id),
@@ -27,7 +28,8 @@ impl KeyPair {
     /// Creates a new `KeyPair` from `XERO_CLIENT_ID` and `XERO_CLIENT_SECRET` environment variables.
     ///
     /// # Panics
-    /// Panics if XERO_CLIENT_ID environment variable is not set.
+    /// Panics if `XERO_CLIENT_ID` environment variable is not set.
+    #[must_use]
     pub fn from_env() -> Self {
         Self(
             oauth2::ClientId::new(std::env::var("XERO_CLIENT_ID").expect("XERO_CLIENT_ID not set")),
@@ -39,12 +41,12 @@ impl KeyPair {
 }
 
 pub type OAuthClient = oauth2::Client<
-    ErrorResponse,
+    error::Response,
     TokenResponse,
     BasicTokenType,
     BasicTokenIntrospectionResponse,
     StandardRevocableToken,
-    ErrorResponse,
+    error::Response,
 >;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -78,6 +80,7 @@ impl oauth2::TokenResponse<BasicTokenType> for TokenResponse {
 }
 
 #[derive(Deserialize)]
+#[allow(unused)]
 pub struct IdToken {
     nbf: i64,
     exp: i64,
@@ -99,6 +102,7 @@ pub struct IdToken {
 }
 
 #[derive(Deserialize)]
+#[allow(unused)]
 pub struct AccessToken {
     nbf: i64,
     exp: i64,

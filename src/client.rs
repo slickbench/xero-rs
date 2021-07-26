@@ -3,12 +3,13 @@ use reqwest::header;
 use url::Url;
 
 use crate::connection::{self, Connection};
-use crate::error::{ErrorResponse, XeroResult};
+use crate::error::{self, Result};
 use crate::oauth::{KeyPair, OAuthClient};
 
 const XERO_AUTH_URL: &str = "https://login.xero.com/identity/connect/authorize";
 const XERO_TOKEN_URL: &str = "https://identity.xero.com/connect/token";
 
+#[allow(unused)]
 pub struct Client {
     oauth_client: OAuthClient,
     http_client: reqwest::Client,
@@ -26,9 +27,9 @@ impl Client {
     pub async fn from_client_credentials(
         key_pair: KeyPair,
         scopes: Option<Vec<oauth2::Scope>>,
-    ) -> Result<
+    ) -> std::result::Result<
         Self,
-        oauth2::RequestTokenError<oauth2::reqwest::Error<reqwest::Error>, ErrorResponse>,
+        oauth2::RequestTokenError<oauth2::reqwest::Error<reqwest::Error>, error::Response>,
     > {
         trace!("building oauth2 client");
         let oauth_client: OAuthClient = oauth2::Client::new(
@@ -68,7 +69,7 @@ impl Client {
 
     /// Retrieve a list of authorized connections (tennants).
     #[instrument(skip(self))]
-    pub async fn get_connections(&self) -> XeroResult<Vec<Connection>> {
+    pub async fn get_connections(&self) -> Result<Vec<Connection>> {
         let res = self.http_client.get(connection::ENDPOINT).send().await?;
         Ok(res.json().await?)
     }
