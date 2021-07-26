@@ -5,6 +5,28 @@ use serde::{Serialize, Deserialize};
 
 use crate::error::ErrorResponse;
 
+/// Stores the OAuth2 client ID and client secret.
+#[derive(Debug, Clone)]
+pub struct KeyPair(pub(crate) oauth2::ClientId, pub(crate) Option<oauth2::ClientSecret>);
+
+impl KeyPair {
+    /// Creates a new `KeyPair` from the provided `client_id` and `client_secret` strings.
+    pub fn new(client_id: String, client_secret: Option<String>) -> Self {
+        Self(oauth2::ClientId::new(client_id), client_secret.map(oauth2::ClientSecret::new))
+    }
+
+    /// Creates a new `KeyPair` from `XERO_CLIENT_ID` and `XERO_CLIENT_SECRET` environment variables.
+    ///
+    /// # Panics
+    /// Panics if XERO_CLIENT_ID environment variable is not set.
+    pub fn from_env() -> Self {
+        Self(
+            oauth2::ClientId::new(std::env::var("XERO_CLIENT_ID").expect("XERO_CLIENT_ID not set")),
+            std::env::var("XERO_CLIENT_SECRET").ok().map(oauth2::ClientSecret::new)
+        )
+    }
+}
+
 pub type OAuthClient = oauth2::Client<ErrorResponse, TokenResponse, BasicTokenType, BasicTokenIntrospectionResponse, StandardRevocableToken, ErrorResponse>;
 
 #[derive(Debug, Serialize, Deserialize)]

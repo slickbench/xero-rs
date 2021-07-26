@@ -4,7 +4,7 @@ use url::Url;
 
 use crate::connection::{self, Connection};
 use crate::error::{ErrorResponse, XeroResult};
-use crate::oauth::OAuthClient;
+use crate::oauth::{KeyPair, OAuthClient};
 
 const XERO_AUTH_URL: &str = "https://login.xero.com/identity/connect/authorize";
 const XERO_TOKEN_URL: &str = "https://identity.xero.com/connect/token";
@@ -23,9 +23,8 @@ impl Client {
     /// Returns an error if the connection can't be made.
     /// # Panics
     #[instrument]
-    pub async fn new_with_client_credentials(
-        client_id: oauth2::ClientId,
-        client_secret: Option<oauth2::ClientSecret>,
+    pub async fn from_client_credentials(
+        key_pair: KeyPair,
         scopes: Option<Vec<oauth2::Scope>>,
     ) -> Result<
         Self,
@@ -33,8 +32,8 @@ impl Client {
     > {
         trace!("building oauth2 client");
         let oauth_client: OAuthClient = oauth2::Client::new(
-            client_id,
-            client_secret,
+            key_pair.0,
+            key_pair.1,
             oauth2::AuthUrl::new(XERO_AUTH_URL.to_string()).unwrap(),
             Some(oauth2::TokenUrl::new(XERO_TOKEN_URL.to_string()).unwrap()),
         );

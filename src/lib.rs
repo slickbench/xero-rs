@@ -7,3 +7,4 @@ pub mod oauth;
 pub mod connection;
 
 pub use client::Client;
+pub use oauth::KeyPair;
