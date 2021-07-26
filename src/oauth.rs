@@ -41,12 +41,12 @@ impl KeyPair {
 }
 
 pub type OAuthClient = oauth2::Client<
-    error::Response,
+    error::OAuth2ErrorResponse,
     TokenResponse,
     BasicTokenType,
     BasicTokenIntrospectionResponse,
     StandardRevocableToken,
-    error::Response,
+    error::OAuth2ErrorResponse,
 >;
 
 #[derive(Debug, Serialize, Deserialize)]

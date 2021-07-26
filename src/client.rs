@@ -31,7 +31,10 @@ impl Client {
         scopes: Option<Vec<oauth2::Scope>>,
     ) -> std::result::Result<
         Self,
-        oauth2::RequestTokenError<oauth2::reqwest::Error<reqwest::Error>, error::Response>,
+        oauth2::RequestTokenError<
+            oauth2::reqwest::Error<reqwest::Error>,
+            error::OAuth2ErrorResponse,
+        >,
     > {
         trace!("building oauth2 client");
         let oauth_client: OAuthClient = oauth2::Client::new(
@@ -124,15 +127,25 @@ impl Client {
         .await
     }
 
+    #[instrument(skip(response))]
     async fn handle_response<T: DeserializeOwned + Sized>(
         response: reqwest::Response,
     ) -> Result<T> {
-        match response.status() {
-            StatusCode::OK => Ok(response.json().await?),
-            status => Err(Error::UnexpectedResponseStatus(
-                status,
-                response.text().await.ok(),
-            )),
+        let status = response.status();
+        let text = response.text().await?;
+        {
+            Ok(match status {
+                StatusCode::OK => Ok(serde_json::from_str(&text)?),
+                StatusCode::BAD_REQUEST => Err(Error::XeroError(serde_json::from_str(&text)?)),
+                status => Err(match serde_json::from_str(&text) {
+                    Err(_) => Error::UnexpectedResponseStatus(status, Some(text.clone())),
+                    Ok(error_response) => Error::XeroError(error_response),
+                }),
+            })
         }
+        .map_err(|e| {
+            error!(?text, "failed to parse response");
+            Error::DeserializationError(e, Some(text))
+        })?
     }
 }
