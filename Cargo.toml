@@ -1,7 +1,12 @@
 [package]
 name = "xero-rs"
-version = "0.1.0"
+version = "0.0.1-alpha.0"
 edition = "2018"
+description = "A Xero API client library for Rust"
+license-file = "LICENSE"
+repository = "https://github.com/slickbench/xero-rs"
+keywords = ["xero", "api", "client", "finance"]
+categories = ["api-bindings"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
