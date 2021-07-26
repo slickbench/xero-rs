@@ -1,7 +1,7 @@
 use core::fmt;
 
 use oauth2::TokenResponse;
-use reqwest::{header, IntoUrl};
+use reqwest::{header, IntoUrl, Method, RequestBuilder};
 use serde::{de::DeserializeOwned, Serialize};
 use url::Url;
 
@@ -69,18 +69,55 @@ impl Client {
         })
     }
 
+    /// Build a request object with authentication headers.
+    fn build_request<U: IntoUrl + fmt::Debug>(&self, method: Method, url: U) -> RequestBuilder {
+        self.http_client
+            .request(method, url)
+            .header(header::ACCEPT, "application/json")
+    }
+
     /// Perform a `GET` request against the API.
     #[instrument(skip(self, query))]
     pub async fn get<'a, R: DeserializeOwned, U: IntoUrl + fmt::Debug, T: Serialize + Sized>(
         &self,
-        endpoint: U,
+        url: U,
         query: T,
     ) -> Result<R> {
         Ok(self
-            .http_client
-            .get(endpoint)
-            .header(header::ACCEPT, "application/json")
+            .build_request(Method::GET, url)
             .query(&query)
+            .send()
+            .await?
+            .json()
+            .await?)
+    }
+
+    /// Perform a `PUT` request against the API.
+    #[instrument(skip(self, data))]
+    pub async fn put<'a, R: DeserializeOwned, U: IntoUrl + fmt::Debug, T: Serialize + Sized>(
+        &self,
+        url: U,
+        data: &T,
+    ) -> Result<R> {
+        Ok(self
+            .build_request(Method::PUT, url)
+            .json(data)
+            .send()
+            .await?
+            .json()
+            .await?)
+    }
+
+    /// Perform a `POST` request against the API.
+    #[instrument(skip(self, data))]
+    pub async fn post<'a, R: DeserializeOwned, U: IntoUrl + fmt::Debug, T: Serialize + Sized>(
+        &self,
+        url: U,
+        data: &T,
+    ) -> Result<R> {
+        Ok(self
+            .build_request(Method::POST, url)
+            .json(data)
             .send()
             .await?
             .json()
