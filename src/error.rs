@@ -13,7 +13,13 @@ pub enum Error {
     Request(reqwest::Error),
 
     #[error("error decoding response: {0:?}")]
-    ResponseDecode(serde_json::Error),
+    DecodeError(serde_json::Error),
+
+    #[error("object not found")]
+    NotFound,
+
+    #[error("endpoint could not be parsed as a URL")]
+    InvalidEndpoint,
 }
 
 impl From<reqwest::Error> for Error {
@@ -24,7 +30,7 @@ impl From<reqwest::Error> for Error {
 
 impl From<serde_json::Error> for Error {
     fn from(e: serde_json::Error) -> Self {
-        Self::ResponseDecode(e)
+        Self::DecodeError(e)
     }
 }
 

@@ -1,11 +1,17 @@
+use std::str::FromStr;
+
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
 
-use crate::{contact::Contact, error::Result, Client};
+use crate::{
+    contact::Contact,
+    error::{Error, Result},
+    Client,
+};
 
-pub const ENDPOINT: &str = "https://api.xero.com/api.xro/2.0/Invoices";
+pub const ENDPOINT: &str = "https://api.xero.com/api.xro/2.0/Invoices/";
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Type {
@@ -38,15 +44,16 @@ pub enum LineAmountType {
 #[serde(rename_all = "PascalCase")]
 pub struct LineItem {
     description: String,
-    quantity: i64,
+    quantity: f64,
     unit_amount: f64,
-    item_code: String,
+    item_code: Option<String>,
     account_code: String,
+    #[serde(rename = "LineItemID")]
     line_item_id: Uuid,
     tax_type: String,
     tax_amount: f64,
     line_amount: f64,
-    discount_rate: f64,
+    discount_rate: Option<f64>,
     // tracking
 }
 
@@ -105,4 +112,14 @@ struct ListResponse {
 pub async fn list(client: &Client) -> Result<Vec<Invoice>> {
     let response: ListResponse = client.get(ENDPOINT, Vec::<String>::default()).await?;
     Ok(response.invoices)
+}
+
+/// Retrieve a single invoice by an `invoice_id`.
+#[instrument(skip(client))]
+pub async fn get(client: &Client, invoice_id: Uuid) -> Result<Invoice> {
+    let endpoint = Url::from_str(ENDPOINT)
+        .and_then(|endpoint| endpoint.join(&invoice_id.to_string()))
+        .map_err(|_| Error::InvalidEndpoint)?;
+    let response: ListResponse = client.get(endpoint, Vec::<String>::default()).await?;
+    response.invoices.into_iter().next().ok_or(Error::NotFound)
 }
