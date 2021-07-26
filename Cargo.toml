@@ -20,7 +20,7 @@ url = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
-uuid = { version = "0.8", features = ["serde"] }
+uuid = { version = "0.8", features = ["serde", "v4"] }
 
 # Tracing
 tracing = "0.1"

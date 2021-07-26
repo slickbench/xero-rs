@@ -13,7 +13,7 @@ use crate::{
 
 pub const ENDPOINT: &str = "https://api.xero.com/api.xro/2.0/Quotes/";
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Status {
     Draft,
@@ -24,7 +24,7 @@ pub enum Status {
     Invoiced,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct Quote {
     pub contact: Contact,

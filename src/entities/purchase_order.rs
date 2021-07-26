@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
@@ -7,13 +8,13 @@ use uuid::Uuid;
 use crate::{
     contact::Contact,
     error::{Error, Result},
-    line_item::{LineAmountType, LineItem},
+    line_item::{self, LineAmountType, LineItem},
     Client,
 };
 
 pub const ENDPOINT: &str = "https://api.xero.com/api.xro/2.0/PurchaseOrders/";
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum Status {
     Draft,
@@ -23,7 +24,7 @@ pub enum Status {
     Deleted,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PurchaseOrder {
     pub contact: Contact,
@@ -79,4 +80,55 @@ pub async fn get(client: &Client, purchase_order_id: Uuid) -> Result<PurchaseOrd
         .into_iter()
         .next()
         .ok_or(Error::NotFound)
+}
+
+#[derive(Debug, Serialize)]
+pub enum ContactIdentifier {
+    ID(Uuid),
+    Number(String),
+}
+
+impl Default for ContactIdentifier {
+    fn default() -> Self {
+        Self::ID(Uuid::new_v4())
+    }
+}
+
+#[derive(Default, Debug, Serialize)]
+pub struct Builder {
+    pub contact: ContactIdentifier,
+    pub line_items: Vec<line_item::Builder>,
+    pub date: Option<NaiveDateTime>,
+    pub delivery_date: Option<NaiveDateTime>,
+    pub line_amount_types: Option<LineAmountType>,
+    pub purchase_order_number: Option<String>,
+    pub reference: Option<String>,
+    #[serde(rename = "BrandingThemeID")]
+    pub branding_theme_id: Option<Uuid>,
+    pub currency_code: Option<String>,
+    pub status: Option<Status>,
+    pub sent_to_contact: Option<bool>,
+    pub delivery_address: Option<String>,
+    pub attention_to: Option<String>,
+    pub telephone: Option<String>,
+    pub delivery_instructions: Option<String>,
+    pub expected_arrival_date: Option<NaiveDateTime>,
+    #[serde(rename = "PurchaseOrderID")]
+    pub purchase_order_id: Option<Uuid>,
+}
+
+impl Builder {
+    #[must_use]
+    pub fn new(contact: ContactIdentifier, line_items: Vec<line_item::Builder>) -> Self {
+        Self {
+            contact,
+            line_items,
+            ..Builder::default()
+        }
+    }
+}
+
+#[instrument(skip(client))]
+pub async fn create(client: &Client, purchase_order: &Builder) -> Result<PurchaseOrder> {
+    client.put(ENDPOINT, purchase_order).await
 }

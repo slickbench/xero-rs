@@ -1,3 +1,4 @@
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -14,6 +15,9 @@ pub enum Error {
 
     #[error("error decoding response: {0:?}")]
     DecodeError(serde_json::Error),
+
+    #[error("unexpected response status: {0:?} | body: {1:?}")]
+    UnexpectedResponseStatus(StatusCode, Option<String>),
 
     #[error("object not found")]
     NotFound,

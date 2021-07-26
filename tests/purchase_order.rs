@@ -1,15 +1,29 @@
 #[macro_use]
 extern crate tracing;
 
+use std::sync::Once;
+
 use anyhow::Result;
-use xero_rs::KeyPair;
+use xero_rs::{
+    line_item,
+    purchase_order::{self, ContactIdentifier},
+    KeyPair,
+};
+
+static LOGGING_CONFIGURED: Once = Once::new();
+
+fn setup_logging() {
+    LOGGING_CONFIGURED.call_once(|| {
+        tracing_subscriber::fmt()
+            .with_env_filter("trace")
+            .with_test_writer()
+            .init()
+    });
+}
 
 #[tokio::test]
 async fn get_purchase_orders() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter("trace")
-        .with_test_writer()
-        .init();
+    setup_logging();
     let client = xero_rs::Client::from_client_credentials(KeyPair::from_env(), None).await?;
 
     let purchase_orders = xero_rs::purchase_order::list(&client).await?;
@@ -22,6 +36,38 @@ async fn get_purchase_orders() -> Result<()> {
         purchase_order_from_list.purchase_order_id,
         purchase_order.purchase_order_id
     );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn create_purchase_order() -> Result<()> {
+    setup_logging();
+    let client = xero_rs::Client::from_client_credentials(KeyPair::from_env(), None).await?;
+
+    let contact = xero_rs::contact::list(&client)
+        .await?
+        .into_iter()
+        .next()
+        .unwrap();
+
+    let description = "test description";
+    let quantity = 3.0;
+    let unit_amount = 2.0;
+    let line_items: Vec<line_item::Builder> = vec![line_item::Builder::new(
+        description.to_string(),
+        quantity,
+        unit_amount,
+    )];
+
+    let po_builder =
+        purchase_order::Builder::new(ContactIdentifier::ID(contact.contact_id), line_items);
+    let created_po = purchase_order::create(&client, &po_builder).await?;
+    let created_line_item = created_po.line_items.first().unwrap();
+    assert_eq!(created_line_item.description, description);
+
+    let po = xero_rs::purchase_order::get(&client, created_po.purchase_order_id).await?;
+    assert_eq!(created_po.purchase_order_id, po.purchase_order_id);
 
     Ok(())
 }

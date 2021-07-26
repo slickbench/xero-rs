@@ -1,11 +1,11 @@
 use core::fmt;
 
 use oauth2::TokenResponse;
-use reqwest::{header, IntoUrl, Method, RequestBuilder};
+use reqwest::{header, IntoUrl, Method, RequestBuilder, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 use url::Url;
 
-use crate::error::{self, Result};
+use crate::error::{self, Error, Result};
 use crate::oauth::{KeyPair, OAuthClient};
 
 const XERO_AUTH_URL: &str = "https://login.xero.com/identity/connect/authorize";
@@ -83,44 +83,56 @@ impl Client {
         url: U,
         query: T,
     ) -> Result<R> {
-        Ok(self
-            .build_request(Method::GET, url)
-            .query(&query)
-            .send()
-            .await?
-            .json()
-            .await?)
+        Self::handle_response(
+            self.build_request(Method::GET, url)
+                .query(&query)
+                .send()
+                .await?,
+        )
+        .await
     }
 
-    /// Perform a `PUT` request against the API.
+    /// Perform a `PUT` request against the API. This method can only create new objects.
     #[instrument(skip(self, data))]
     pub async fn put<'a, R: DeserializeOwned, U: IntoUrl + fmt::Debug, T: Serialize + Sized>(
         &self,
         url: U,
         data: &T,
     ) -> Result<R> {
-        Ok(self
-            .build_request(Method::PUT, url)
-            .json(data)
-            .send()
-            .await?
-            .json()
-            .await?)
+        Self::handle_response(
+            self.build_request(Method::PUT, url)
+                .json(data)
+                .send()
+                .await?,
+        )
+        .await
     }
 
-    /// Perform a `POST` request against the API.
+    /// Perform a `POST` request against the API. This method can create or update objects.
     #[instrument(skip(self, data))]
     pub async fn post<'a, R: DeserializeOwned, U: IntoUrl + fmt::Debug, T: Serialize + Sized>(
         &self,
         url: U,
         data: &T,
     ) -> Result<R> {
-        Ok(self
-            .build_request(Method::POST, url)
-            .json(data)
-            .send()
-            .await?
-            .json()
-            .await?)
+        Self::handle_response(
+            self.build_request(Method::POST, url)
+                .json(data)
+                .send()
+                .await?,
+        )
+        .await
+    }
+
+    async fn handle_response<T: DeserializeOwned + Sized>(
+        response: reqwest::Response,
+    ) -> Result<T> {
+        match response.status() {
+            StatusCode::OK => Ok(response.json().await?),
+            status => Err(Error::UnexpectedResponseStatus(
+                status,
+                response.text().await.ok(),
+            )),
+        }
     }
 }
