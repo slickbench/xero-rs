@@ -6,6 +6,7 @@ use xero_rs::KeyPair;
 
 #[tokio::test]
 async fn authorize_client() -> Result<()> {
+    tracing_subscriber::fmt().with_test_writer().init();
     let client = xero_rs::Client::from_client_credentials(KeyPair::from_env(), None).await?;
 
     let connections = xero_rs::connection::list(&client).await?;
