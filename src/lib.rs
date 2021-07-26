@@ -1,7 +1,9 @@
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn it_works() {
-        assert_eq!(2 + 2, 4);
-    }
-}
+#[macro_use]
+extern crate tracing;
+
+pub mod client;
+pub mod error;
+pub mod oauth;
+pub mod connection;
+
+pub use client::Client;
