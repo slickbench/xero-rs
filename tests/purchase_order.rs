@@ -15,7 +15,7 @@ static LOGGING_CONFIGURED: Once = Once::new();
 fn setup_logging() {
     LOGGING_CONFIGURED.call_once(|| {
         tracing_subscriber::fmt()
-            .with_env_filter("trace")
+            .with_env_filter("info,xero_rs=trace")
             .with_test_writer()
             .init()
     });
@@ -63,8 +63,6 @@ async fn create_purchase_order() -> Result<()> {
     let po_builder =
         purchase_order::Builder::new(ContactIdentifier::ID(contact.contact_id), line_items);
     let created_po = purchase_order::create(&client, &po_builder).await?;
-    let created_line_item = created_po.line_items.first().unwrap();
-    assert_eq!(created_line_item.description, description);
 
     let po = xero_rs::purchase_order::get(&client, created_po.purchase_order_id).await?;
     assert_eq!(created_po.purchase_order_id, po.purchase_order_id);

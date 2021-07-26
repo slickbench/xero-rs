@@ -33,5 +33,6 @@ This library is in very early days. This has been implemented so far:
 - Purchase Orders
   - List
   - Get by ID
+  - Create
 - Contacts
   - List

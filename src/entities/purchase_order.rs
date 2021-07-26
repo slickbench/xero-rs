@@ -9,7 +9,7 @@ use crate::{
     contact::Contact,
     error::{Error, Result},
     line_item::{self, LineAmountType, LineItem},
-    Client,
+    Client, MutationResponse,
 };
 
 pub const ENDPOINT: &str = "https://api.xero.com/api.xro/2.0/PurchaseOrders/";
@@ -32,7 +32,8 @@ pub struct PurchaseOrder {
     pub delivery_date: Option<String>,
     pub line_amount_types: LineAmountType,
     pub purchase_order_number: String,
-    pub reference: String,
+    pub reference: Option<String>,
+    #[serde(default)]
     pub line_items: Vec<LineItem>,
     pub branding_theme_id: Option<Uuid>,
     pub currency_code: String,
@@ -50,7 +51,7 @@ pub struct PurchaseOrder {
     pub total_tax: f64,
     pub total: f64,
     pub total_discount: Option<f64>,
-    pub has_attachments: bool,
+    pub has_attachments: Option<bool>,
     #[serde(rename = "UpdatedDateUTC")]
     pub updated_date_utc: String,
 }
@@ -84,7 +85,9 @@ pub async fn get(client: &Client, purchase_order_id: Uuid) -> Result<PurchaseOrd
 
 #[derive(Debug, Serialize)]
 pub enum ContactIdentifier {
+    #[serde(rename = "ContactID")]
     ID(Uuid),
+    #[serde(rename = "ContactNumber")]
     Number(String),
 }
 
@@ -130,5 +133,10 @@ impl Builder {
 
 #[instrument(skip(client))]
 pub async fn create(client: &Client, purchase_order: &Builder) -> Result<PurchaseOrder> {
-    client.put(ENDPOINT, purchase_order).await
+    let result: MutationResponse = client.put(ENDPOINT, purchase_order).await?;
+    result
+        .data
+        .get_purchase_orders()
+        .and_then(|po| po.into_iter().next())
+        .ok_or(Error::NotFound)
 }

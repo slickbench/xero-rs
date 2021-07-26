@@ -1,4 +1,3 @@
-use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
@@ -9,10 +8,13 @@ pub struct OAuth2ErrorResponse {}
 impl oauth2::ErrorResponse for OAuth2ErrorResponse {}
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "PascalCase")]
+#[serde(tag = "Type", rename_all = "PascalCase")]
 #[allow(clippy::module_name_repetitions)]
 pub enum ErrorType {
-    ValidationException,
+    ValidationException {
+        elements: Vec<ValidationExceptionElement>,
+    },
+    PostDataInvalidException,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -44,9 +46,9 @@ pub struct ValidationExceptionElement {
 #[serde(rename_all = "PascalCase")]
 pub struct Response {
     error_number: u64,
-    r#type: ErrorType,
     message: String,
-    elements: Vec<ValidationExceptionElement>,
+    #[serde(flatten)]
+    error: ErrorType,
 }
 
 /// Errors that can occur when interacting with the Xero API.
@@ -55,11 +57,8 @@ pub enum Error {
     #[error("error making request: {0:?}")]
     Request(reqwest::Error),
 
-    #[error("error decoding response: {0:?} | body: {1:?}")]
+    #[error("error decoding response: {0:?} | body: {1:#?}")]
     DeserializationError(serde_json::Error, Option<String>),
-
-    #[error("unexpected response status: {0:?} | body: {1:?}")]
-    UnexpectedResponseStatus(StatusCode, Option<String>),
 
     #[error("object not found")]
     NotFound,

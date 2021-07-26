@@ -102,6 +102,7 @@ impl Client {
         url: U,
         data: &T,
     ) -> Result<R> {
+        trace!(json = ?serde_json::to_string(&data).unwrap(), ?url, "making PUT request");
         Self::handle_response(
             self.build_request(Method::PUT, url)
                 .json(data)
@@ -113,11 +114,17 @@ impl Client {
 
     /// Perform a `POST` request against the API. This method can create or update objects.
     #[instrument(skip(self, data))]
-    pub async fn post<'a, R: DeserializeOwned, U: IntoUrl + fmt::Debug, T: Serialize + Sized>(
+    pub async fn post<
+        'a,
+        R: DeserializeOwned,
+        U: IntoUrl + fmt::Debug,
+        T: Serialize + Sized + fmt::Debug,
+    >(
         &self,
         url: U,
         data: &T,
     ) -> Result<R> {
+        trace!(json = ?serde_json::to_string(&data).unwrap(), ?url, "making POST request");
         Self::handle_response(
             self.build_request(Method::POST, url)
                 .json(data)
@@ -133,19 +140,19 @@ impl Client {
     ) -> Result<T> {
         let status = response.status();
         let text = response.text().await?;
-        {
-            Ok(match status {
-                StatusCode::OK => Ok(serde_json::from_str(&text)?),
-                StatusCode::BAD_REQUEST => Err(Error::XeroError(serde_json::from_str(&text)?)),
-                status => Err(match serde_json::from_str(&text) {
-                    Err(_) => Error::UnexpectedResponseStatus(status, Some(text.clone())),
-                    Ok(error_response) => Error::XeroError(error_response),
-                }),
-            })
+        let handle_deserialize_error = {
+            let text = text.clone();
+            |e: serde_json::Error| Error::DeserializationError(e, Some(text))
+        };
+
+        match status {
+            StatusCode::NOT_FOUND => Err(Error::NotFound),
+            status => match status {
+                StatusCode::OK => serde_json::from_str(&text).map_err(handle_deserialize_error),
+                _ => Err(Error::XeroError(
+                    serde_json::from_str(&text).map_err(handle_deserialize_error)?,
+                )),
+            },
         }
-        .map_err(|e| {
-            error!(?text, "failed to parse response");
-            Error::DeserializationError(e, Some(text))
-        })?
     }
 }
