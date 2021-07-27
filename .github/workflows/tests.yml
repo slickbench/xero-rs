@@ -1,4 +1,4 @@
-name: Rust
+name: Tests
 
 on:
   push:
@@ -10,16 +10,23 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  clippy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - uses: Swatinem/rust-cache@v1
+    - name: Run Clippy
+      run: cargo clippy
+
+  test:
 
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v2
     - uses: Swatinem/rust-cache@v1
-    - name: Build
-      run: cargo build
-    - name: Run tests
+    - name: Run Tests
       env:
         XERO_CLIENT_ID: ${{ secrets.XERO_CLIENT_ID }}
         XERO_CLIENT_SECRET: ${{ secrets.XERO_CLIENT_SECRET }}

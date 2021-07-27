@@ -22,7 +22,7 @@ A Xero API client library for Rust.
 
 This library is in very early days. This has been implemented so far:
 
-- OAuth2 Authentication (Client Credentials)
+- OAuth2 Authentication (Client Credentials, Authorization Code Flow)
 - List authorized connections (tennants)
 - Quotes
   - List
