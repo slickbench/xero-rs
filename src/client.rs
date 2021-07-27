@@ -1,12 +1,13 @@
 use core::fmt;
 use std::borrow::Cow;
 
-use oauth2::{AuthorizationCode, CsrfToken, TokenResponse};
+use oauth2::{AccessToken, AuthorizationCode, CsrfToken, RefreshToken, TokenResponse};
 use reqwest::{header, IntoUrl, Method, RequestBuilder, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 use url::Url;
 
 pub use oauth2::Scope;
+use uuid::Uuid;
 
 use crate::error::{self, Error, Result};
 use crate::oauth::{KeyPair, OAuthClient};
@@ -16,22 +17,26 @@ const XERO_TOKEN_URL: &str = "https://identity.xero.com/connect/token";
 
 #[allow(unused)]
 pub struct Client {
-    oauth_client: OAuthClient,
-    http_client: reqwest::Client,
-    redirect_uris: Option<Vec<Url>>,
-    grant_type: Option<String>,
-    scopes: Option<Vec<String>>,
-    state: Option<String>,
+    access_token: AccessToken,
+    refresh_token: Option<RefreshToken>,
+    tenant_id: Option<Uuid>,
 }
 
 impl Client {
-    #[instrument]
-    fn build_http_client(access_token: &oauth2::AccessToken) -> reqwest::Client {
+    #[instrument(skip(self))]
+    fn build_http_client(&self) -> reqwest::Client {
         let mut headers = header::HeaderMap::new();
         headers.append(
             "Authorization",
-            header::HeaderValue::from_str(&format!("Bearer {}", access_token.secret())).unwrap(),
+            header::HeaderValue::from_str(&format!("Bearer {}", self.access_token.secret()))
+                .unwrap(),
         );
+        if let Some(tenant_id) = self.tenant_id {
+            headers.append(
+                "Xero-tenant-id",
+                header::HeaderValue::from_str(&tenant_id.to_string()).unwrap(),
+            );
+        }
         reqwest::Client::builder()
             .default_headers(headers)
             .build()
@@ -55,10 +60,8 @@ impl Client {
         redirect_url: Url,
         scopes: Vec<Scope>,
     ) -> (Url, CsrfToken) {
-        let oauth_client = Self::build_oauth_client(key_pair)
-            .set_redirect_uri(oauth2::RedirectUrl::from_url(redirect_url));
-
-        oauth_client
+        Self::build_oauth_client(key_pair)
+            .set_redirect_uri(oauth2::RedirectUrl::from_url(redirect_url))
             .authorize_url(CsrfToken::new_random)
             .add_scopes(scopes)
             .url()
@@ -87,12 +90,9 @@ impl Client {
             .await?;
 
         Ok(Self {
-            oauth_client,
-            http_client: Self::build_http_client(token_result.access_token()),
-            redirect_uris: None,
-            grant_type: None,
-            scopes: None,
-            state: None,
+            access_token: token_result.access_token().clone(),
+            refresh_token: None,
+            tenant_id: None,
         })
     }
 
@@ -120,18 +120,21 @@ impl Client {
             .await?;
 
         Ok(Self {
-            oauth_client,
-            http_client: Self::build_http_client(token_result.access_token()),
-            redirect_uris: None,
-            grant_type: None,
-            scopes: None,
-            state: None,
+            access_token: token_result.access_token().clone(),
+            refresh_token: None,
+            tenant_id: None,
         })
+    }
+
+    /// Sets the tenant ID for this client.
+    pub fn set_tenant(&mut self, tenant_id: Option<Uuid>) {
+        trace!(?tenant_id, "updating tenant id");
+        self.tenant_id = tenant_id;
     }
 
     /// Build a request object with authentication headers.
     fn build_request<U: IntoUrl + fmt::Debug>(&self, method: Method, url: U) -> RequestBuilder {
-        self.http_client
+        self.build_http_client()
             .request(method, url)
             .header(header::ACCEPT, "application/json")
     }
@@ -206,7 +209,10 @@ impl Client {
             StatusCode::NOT_FOUND => Err(Error::NotFound),
             status => match status {
                 StatusCode::OK => serde_json::from_str(&text).map_err(handle_deserialize_error),
-                _ => Err(Error::XeroError(
+                StatusCode::FORBIDDEN => Err(Error::Forbidden(
+                    serde_json::from_str(&text).map_err(handle_deserialize_error)?,
+                )),
+                _ => Err(Error::API(
                     serde_json::from_str(&text).map_err(handle_deserialize_error)?,
                 )),
             },

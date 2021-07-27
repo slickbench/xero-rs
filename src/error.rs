@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
@@ -51,6 +53,17 @@ pub struct Response {
     error: ErrorType,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct ForbiddenResponse {
+    r#type: Option<String>,
+    title: String,
+    status: u16,
+    detail: String,
+    instance: Uuid,
+    extensions: HashMap<String, String>,
+}
+
 /// Errors that can occur when interacting with the Xero API.
 #[derive(Debug, Error)]
 pub enum Error {
@@ -66,8 +79,14 @@ pub enum Error {
     #[error("endpoint could not be parsed as a URL")]
     InvalidEndpoint,
 
+    /// A standard error returned while interacting with the API such as a `ValidationException`.
     #[error("encountered validation exception: {0:#?}")]
-    XeroError(Response),
+    API(Response),
+
+    /// An error returned when the user is forbidden by something like an unsuccessful
+    /// authentication.
+    #[error("encountered forbidden response: {0:#?}")]
+    Forbidden(ForbiddenResponse),
 }
 
 impl From<reqwest::Error> for Error {

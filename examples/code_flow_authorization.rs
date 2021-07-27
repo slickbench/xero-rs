@@ -24,7 +24,7 @@ struct RedirectArgs {
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter("debug,xero_rs=trace")
+        .with_env_filter("info,xero_rs=trace")
         .init();
 
     tokio::spawn(async move {
@@ -43,7 +43,12 @@ async fn main() -> Result<()> {
     let (authorize_url, csrf_token) = xero_rs::Client::authorize_url(
         key_pair.clone(),
         redirect_url.clone(),
-        vec![Scope::new("openid".to_string())],
+        vec![
+            Scope::new("openid".to_string()),
+            Scope::new("profile".to_string()),
+            Scope::new("email".to_string()),
+            Scope::new("accounting.transactions.read".to_string()),
+        ],
     );
     info!("Sign in to Xero: {}", authorize_url.to_string());
 
@@ -56,10 +61,13 @@ async fn main() -> Result<()> {
     };
     assert_eq!(&state.expect("missing state"), csrf_token.secret());
 
-    let client = xero_rs::Client::from_authorization_code(key_pair, redirect_url, code).await?;
+    let mut client = xero_rs::Client::from_authorization_code(key_pair, redirect_url, code).await?;
 
     let connections = xero_rs::connection::list(&client).await?;
     info!("found client connections: {:#?}", connections);
+    client.set_tenant(Some(
+        connections.first().expect("no connections found").tenant_id,
+    ));
 
     let invoices = xero_rs::invoice::list(&client).await?;
     info!("found invoices: {:#?}", invoices);

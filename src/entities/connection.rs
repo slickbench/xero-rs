@@ -9,13 +9,13 @@ pub const ENDPOINT: &str = "https://api.xero.com/connections";
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Connection {
-    id: Uuid,
-    auth_event_id: Uuid,
-    tenant_id: Uuid,
-    tenant_type: String,
-    tenant_name: String,
-    created_date_utc: NaiveDateTime,
-    updated_date_utc: NaiveDateTime,
+    pub id: Uuid,
+    pub auth_event_id: Uuid,
+    pub tenant_id: Uuid,
+    pub tenant_type: String,
+    pub tenant_name: String,
+    pub created_date_utc: NaiveDateTime,
+    pub updated_date_utc: NaiveDateTime,
 }
 
 /// Retrieve a list of authorized connections (tennants).
