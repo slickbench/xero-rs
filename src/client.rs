@@ -1,9 +1,12 @@
 use core::fmt;
+use std::borrow::Cow;
 
-use oauth2::TokenResponse;
+use oauth2::{AuthorizationCode, CsrfToken, TokenResponse};
 use reqwest::{header, IntoUrl, Method, RequestBuilder, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 use url::Url;
+
+pub use oauth2::Scope;
 
 use crate::error::{self, Error, Result};
 use crate::oauth::{KeyPair, OAuthClient};
@@ -22,13 +25,51 @@ pub struct Client {
 }
 
 impl Client {
+    #[instrument]
+    fn build_http_client(access_token: &oauth2::AccessToken) -> reqwest::Client {
+        let mut headers = header::HeaderMap::new();
+        headers.append(
+            "Authorization",
+            header::HeaderValue::from_str(&format!("Bearer {}", access_token.secret())).unwrap(),
+        );
+        reqwest::Client::builder()
+            .default_headers(headers)
+            .build()
+            .unwrap()
+    }
+
+    #[instrument]
+    fn build_oauth_client(key_pair: KeyPair) -> OAuthClient {
+        oauth2::Client::new(
+            key_pair.0,
+            key_pair.1,
+            oauth2::AuthUrl::new(XERO_AUTH_URL.to_string()).unwrap(),
+            Some(oauth2::TokenUrl::new(XERO_TOKEN_URL.to_string()).unwrap()),
+        )
+    }
+
+    /// Generates an authorization URL to use for the code flow authorization method.
+    #[instrument]
+    pub fn authorize_url(
+        key_pair: KeyPair,
+        redirect_url: Url,
+        scopes: Vec<Scope>,
+    ) -> (Url, CsrfToken) {
+        let oauth_client = Self::build_oauth_client(key_pair)
+            .set_redirect_uri(oauth2::RedirectUrl::from_url(redirect_url));
+
+        oauth_client
+            .authorize_url(CsrfToken::new_random)
+            .add_scopes(scopes)
+            .url()
+    }
+
     /// # Errors
     /// Returns an error if the connection can't be made.
-    /// # Panics
     #[instrument]
     pub async fn from_client_credentials(
         key_pair: KeyPair,
-        scopes: Option<Vec<oauth2::Scope>>,
+        scopes: Option<Vec<Scope>>,
     ) -> std::result::Result<
         Self,
         oauth2::RequestTokenError<
@@ -36,13 +77,7 @@ impl Client {
             error::OAuth2ErrorResponse,
         >,
     > {
-        trace!("building oauth2 client");
-        let oauth_client: OAuthClient = oauth2::Client::new(
-            key_pair.0,
-            key_pair.1,
-            oauth2::AuthUrl::new(XERO_AUTH_URL.to_string()).unwrap(),
-            Some(oauth2::TokenUrl::new(XERO_TOKEN_URL.to_string()).unwrap()),
-        );
+        let oauth_client = Self::build_oauth_client(key_pair);
 
         trace!("retrieving access token w/ client credentials grant");
         let token_result = oauth_client
@@ -50,21 +85,43 @@ impl Client {
             .add_scopes(scopes.unwrap_or_default())
             .request_async(oauth2::reqwest::async_http_client)
             .await?;
-        let access_token = token_result.access_token().secret();
-
-        let mut headers = header::HeaderMap::new();
-        headers.append(
-            "Authorization",
-            header::HeaderValue::from_str(&format!("Bearer {}", access_token)).unwrap(),
-        );
-        let http_client = reqwest::Client::builder()
-            .default_headers(headers)
-            .build()
-            .unwrap();
 
         Ok(Self {
             oauth_client,
-            http_client,
+            http_client: Self::build_http_client(token_result.access_token()),
+            redirect_uris: None,
+            grant_type: None,
+            scopes: None,
+            state: None,
+        })
+    }
+
+    /// Creates an authorized client from a code generated in the code flow authorization method.
+    ///
+    /// # Errors
+    /// Returns an error if the connection can't be made.
+    #[instrument]
+    pub async fn from_authorization_code(
+        key_pair: KeyPair,
+        redirect_url: Url,
+        code: String,
+    ) -> std::result::Result<
+        Self,
+        oauth2::RequestTokenError<
+            oauth2::reqwest::Error<reqwest::Error>,
+            error::OAuth2ErrorResponse,
+        >,
+    > {
+        let oauth_client = Self::build_oauth_client(key_pair);
+        let token_result = oauth_client
+            .exchange_code(AuthorizationCode::new(code))
+            .set_redirect_uri(Cow::Owned(oauth2::RedirectUrl::from_url(redirect_url)))
+            .request_async(oauth2::reqwest::async_http_client)
+            .await?;
+
+        Ok(Self {
+            oauth_client,
+            http_client: Self::build_http_client(token_result.access_token()),
             redirect_uris: None,
             grant_type: None,
             scopes: None,
