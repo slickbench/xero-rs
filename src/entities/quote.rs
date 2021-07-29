@@ -1,5 +1,6 @@
 use std::str::FromStr;
 
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
@@ -33,14 +34,14 @@ pub struct Quote {
     pub status: Status,
     pub line_amount_types: LineAmountType,
     pub line_items: Vec<LineItem>,
-    pub sub_total: f64,
-    pub total_tax: f64,
-    pub total: f64,
-    pub total_discount: Option<f64>,
+    pub sub_total: Decimal,
+    pub total_tax: Decimal,
+    pub total: Decimal,
+    pub total_discount: Option<Decimal>,
     #[serde(rename = "UpdatedDateUTC")]
     pub updated_date_utc: String,
     pub currency_code: String,
-    pub currency_rate: Option<f64>,
+    pub currency_rate: Option<Decimal>,
     #[serde(rename = "QuoteID")]
     pub quote_id: Uuid,
     pub quote_number: String,

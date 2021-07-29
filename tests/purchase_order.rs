@@ -4,6 +4,7 @@ extern crate tracing;
 use std::sync::Once;
 
 use anyhow::Result;
+use rust_decimal_macros::dec;
 use xero_rs::{
     line_item,
     purchase_order::{self, ContactIdentifier},
@@ -52,8 +53,8 @@ async fn create_purchase_order() -> Result<()> {
         .unwrap();
 
     let description = "test description";
-    let quantity = 3.0;
-    let unit_amount = 2.0;
+    let quantity = dec!(3.00);
+    let unit_amount = dec!(2.00);
     let line_items: Vec<line_item::Builder> = vec![line_item::Builder::new(
         description.to_string(),
         quantity,

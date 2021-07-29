@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use chrono::NaiveDateTime;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
@@ -46,14 +47,14 @@ pub struct Invoice {
     pub status: Status,
     pub line_amount_types: LineAmountType,
     pub line_items: Vec<LineItem>,
-    pub sub_total: f64,
-    pub total_tax: f64,
-    pub total: f64,
-    pub total_discount: Option<f64>,
+    pub sub_total: Decimal,
+    pub total_tax: Decimal,
+    pub total: Decimal,
+    pub total_discount: Option<Decimal>,
     #[serde(rename = "UpdatedDateUTC")]
     pub updated_date_utc: String,
     pub currency_code: String,
-    pub currency_rate: Option<f64>,
+    pub currency_rate: Option<Decimal>,
     #[serde(rename = "InvoiceID")]
     pub invoice_id: Uuid,
     pub invoice_number: String,
@@ -70,12 +71,12 @@ pub struct Invoice {
     // credit_notes
     // prepayments
     // overpayments
-    pub amount_due: f64,
-    pub amount_paid: f64,
+    pub amount_due: Decimal,
+    pub amount_paid: Decimal,
     #[serde(rename = "CISDeduction")]
     pub cis_deduction: Option<String>,
     pub fully_paid_on_date: Option<String>,
-    pub amount_credited: f64,
+    pub amount_credited: Decimal,
 }
 
 #[derive(Deserialize)]

@@ -1,3 +1,4 @@
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -16,16 +17,16 @@ pub enum LineAmountType {
 #[serde(rename_all = "PascalCase")]
 pub struct LineItem {
     pub description: String,
-    pub quantity: f64,
-    pub unit_amount: f64,
+    pub quantity: Decimal,
+    pub unit_amount: Decimal,
     pub item_code: Option<String>,
     pub account_code: Option<String>,
     #[serde(rename = "LineItemID")]
     pub line_item_id: Uuid,
     pub tax_type: String,
-    pub tax_amount: f64,
-    pub line_amount: f64,
-    pub discount_rate: Option<f64>,
+    pub tax_amount: Decimal,
+    pub line_amount: Decimal,
+    pub discount_rate: Option<Decimal>,
     // tracking
 }
 
@@ -47,12 +48,12 @@ impl LineItem {
 #[serde(rename_all = "PascalCase")]
 pub struct Builder {
     description: String,
-    quantity: f64,
-    unit_amount: f64,
+    quantity: Decimal,
+    unit_amount: Decimal,
     item_code: Option<String>,
     account_code: Option<String>,
     tax_type: String,
-    discount_rate: Option<f64>,
+    discount_rate: Option<Decimal>,
     // tracking
     #[serde(rename = "LineItemID")]
     line_item_id: Uuid,
@@ -60,7 +61,7 @@ pub struct Builder {
 
 impl Builder {
     #[must_use]
-    pub fn new(description: String, quantity: f64, unit_amount: f64) -> Self {
+    pub fn new(description: String, quantity: Decimal, unit_amount: Decimal) -> Self {
         Builder {
             description,
             quantity,

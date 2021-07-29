@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use chrono::NaiveDateTime;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
@@ -46,11 +47,11 @@ pub struct PurchaseOrder {
     pub expected_arrival_date: Option<String>,
     #[serde(rename = "PurchaseOrderID")]
     pub purchase_order_id: Uuid,
-    pub currency_rate: Option<f64>,
-    pub sub_total: f64,
-    pub total_tax: f64,
-    pub total: f64,
-    pub total_discount: Option<f64>,
+    pub currency_rate: Option<Decimal>,
+    pub sub_total: Decimal,
+    pub total_tax: Decimal,
+    pub total: Decimal,
+    pub total_discount: Option<Decimal>,
     pub has_attachments: Option<bool>,
     #[serde(rename = "UpdatedDateUTC")]
     pub updated_date_utc: String,
