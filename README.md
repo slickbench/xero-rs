@@ -11,8 +11,8 @@
 [docs-url]: https://docs.rs/xero-rs
 [mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
 [mit-url]: LICENSE
-[actions-badge]: https://github.com/slickbench/xero-rs/actions/workflows/rust.yml/badge.svg
-[actions-url]: https://github.com/slickbench/xero-rs/actions/workflows/rust.yml
+[actions-badge]: https://github.com/slickbench/xero-rs/actions/workflows/tests.yml/badge.svg
+[actions-url]: https://github.com/slickbench/xero-rs/actions/workflows/tests.yml
 
 ## Description
 
