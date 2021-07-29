@@ -16,6 +16,8 @@ const XERO_AUTH_URL: &str = "https://login.xero.com/identity/connect/authorize";
 const XERO_TOKEN_URL: &str = "https://identity.xero.com/connect/token";
 
 #[allow(unused)]
+/// This is the client that is used for interacting with the Xero API. It handles OAuth 2 authentication
+/// and context (the current tenant).
 pub struct Client {
     access_token: AccessToken,
     refresh_token: Option<RefreshToken>,
@@ -139,13 +141,19 @@ impl Client {
             .header(header::ACCEPT, "application/json")
     }
 
-    /// Perform a `GET` request against the API.
+    /// Perform an authenticated `GET` request against the API.
     #[instrument(skip(self, query))]
-    pub async fn get<'a, R: DeserializeOwned, U: IntoUrl + fmt::Debug, T: Serialize + Sized>(
+    pub async fn get<
+        'a,
+        R: DeserializeOwned,
+        U: IntoUrl + fmt::Debug,
+        T: Serialize + Sized + fmt::Debug,
+    >(
         &self,
         url: U,
         query: T,
     ) -> Result<R> {
+        trace!(?query, ?url, "making GET request");
         Self::handle_response(
             self.build_request(Method::GET, url)
                 .query(&query)
@@ -155,7 +163,7 @@ impl Client {
         .await
     }
 
-    /// Perform a `PUT` request against the API. This method can only create new objects.
+    /// Perform an authenticated `PUT` request against the API. This method can only create new objects.
     #[instrument(skip(self, data))]
     pub async fn put<'a, R: DeserializeOwned, U: IntoUrl + fmt::Debug, T: Serialize + Sized>(
         &self,
@@ -172,7 +180,7 @@ impl Client {
         .await
     }
 
-    /// Perform a `POST` request against the API. This method can create or update objects.
+    /// Perform an authenticated `POST` request against the API. This method can create or update objects.
     #[instrument(skip(self, data))]
     pub async fn post<
         'a,
