@@ -16,11 +16,20 @@
 
 ## Description
 
-A Xero API client library for Rust.
+A Xero API client library for Rust. This library is in very early days and the API is **not** stable, it may change without notice.
 
-## Functionality
+This was put together as part of the requirements for a private project so I will be implementing features as-needed, but all contributions are welcome.
 
-This library is in very early days. This has been implemented so far:
+## Features
+
+- Client credential & code flow authorization support
+- Generic GET, PUT, and POST methods for custom requests
+- Uses [rust_decimal](https://github.com/paupino/rust-decimal) for storing prices/decimal values
+- Well tested (that's the goal, at least)
+
+## Currently Implemented
+
+This has been implemented so far:
 
 - OAuth2 Authentication (Client Credentials, Authorization Code Flow)
 - List authorized connections (tennants)
