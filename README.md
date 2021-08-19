@@ -4,6 +4,7 @@
 [![Documentation][docs-badge]][docs-url]
 [![MIT licensed][mit-badge]][mit-url]
 [![Build Status][actions-badge]][actions-url]
+[![Coverage][codecov-badge]][codecov-url]
 
 [crates-badge]: https://img.shields.io/crates/v/xero-rs.svg
 [crates-url]: https://crates.io/crates/xero-rs
@@ -13,6 +14,8 @@
 [mit-url]: LICENSE
 [actions-badge]: https://github.com/slickbench/xero-rs/actions/workflows/tests.yml/badge.svg
 [actions-url]: https://github.com/slickbench/xero-rs/actions/workflows/tests.yml
+[codecov-badge]: https://codecov.io/gh/slickbench/xero-rs/branch/main/graph/badge.svg?token=INFT14K6KW
+[codecov-url]: https://codecov.io/gh/slickbench/xero-rs
 
 ## Description
 
