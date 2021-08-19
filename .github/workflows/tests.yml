@@ -22,16 +22,18 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    container:
+      image: ghcr.io/slickbench/docker-rust-base:main
+      options: --security-opt seccomp=unconfined
+
     steps:
     - uses: actions/checkout@v2
     - uses: Swatinem/rust-cache@v1
-    - name: Setup cargo-tarpaulin
-      run: cargo install cargo-tarpaulin
     - name: Run Tests
       env:
         XERO_CLIENT_ID: ${{ secrets.XERO_CLIENT_ID }}
         XERO_CLIENT_SECRET: ${{ secrets.XERO_CLIENT_SECRET }}
-      run: cargo tarpaulin
+      run: cargo tarpaulin --skip-clean --out Xml
     - name: Upload to codecov.io
       uses: codecov/codecov-action@v2
       with:
