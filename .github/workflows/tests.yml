@@ -33,8 +33,9 @@ jobs:
       env:
         XERO_CLIENT_ID: ${{ secrets.XERO_CLIENT_ID }}
         XERO_CLIENT_SECRET: ${{ secrets.XERO_CLIENT_SECRET }}
-      run: cargo tarpaulin --skip-clean --out Xml
+      run: cargo llvm-cov --all-features --lcov --output-path lcov.info
     - name: Upload to codecov.io
       uses: codecov/codecov-action@v2
       with:
+        files: lcov.info
         fail_ci_if_error: true
