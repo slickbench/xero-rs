@@ -12,7 +12,7 @@ categories = ["api-bindings"]
 
 [dependencies]
 oauth2 = { version = "4", default-features = false, features = ["reqwest", "rustls-tls"] }
-reqwest = { version = "0.11", default-features = false, features = ["tokio-native-tls", "json"] }
+reqwest = { version = "0.12", default-features = false, features = ["tokio-native-tls", "json"] }
 
 url = "2"
 
