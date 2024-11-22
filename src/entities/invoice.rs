@@ -86,7 +86,8 @@ pub struct Invoice {
     #[serde(rename = "CISDeduction")]
     pub cis_deduction: Option<String>,
     pub fully_paid_on_date: Option<String>,
-    pub amount_credited: Decimal,
+    #[serde(default)]
+    pub amount_credited: Option<Decimal>,
 }
 
 #[derive(Deserialize)]
