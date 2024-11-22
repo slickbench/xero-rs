@@ -16,6 +16,7 @@ const XERO_AUTH_URL: &str = "https://login.xero.com/identity/connect/authorize";
 const XERO_TOKEN_URL: &str = "https://identity.xero.com/connect/token";
 
 #[allow(unused)]
+#[derive(Clone, Debug)]
 /// This is the client that is used for interacting with the Xero API. It handles OAuth 2 authentication
 /// and context (the current tenant).
 pub struct Client {
