@@ -13,6 +13,8 @@ use crate::{
     Client,
 };
 
+use super::{line_item, MutationResponse};
+
 pub const ENDPOINT: &str = "https://api.xero.com/api.xro/2.0/Invoices/";
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -22,6 +24,12 @@ pub enum Type {
 
     #[serde(rename = "ACCREC")]
     AccountsReceivable,
+}
+
+impl Default for Type {
+    fn default() -> Self {
+        Self::AccountsReceivable
+    }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -42,8 +50,8 @@ pub struct Invoice {
     pub contact: Contact,
     #[serde(rename = "DateString")]
     pub date: NaiveDateTime,
-    #[serde(rename = "DueDateString")]
-    pub due_date: NaiveDateTime,
+    #[serde(rename = "DueDateString", default)]
+    pub due_date: Option<NaiveDateTime>,
     pub status: Status,
     pub line_amount_types: LineAmountType,
     pub line_items: Vec<LineItem>,
@@ -57,13 +65,15 @@ pub struct Invoice {
     pub currency_rate: Option<Decimal>,
     #[serde(rename = "InvoiceID")]
     pub invoice_id: Uuid,
-    pub invoice_number: String,
+    #[serde(default)]
+    pub invoice_number: Option<String>,
     pub reference: Option<String>,
     pub branding_theme_id: Option<Uuid>,
     pub url: Option<Url>,
     pub sent_to_contact: Option<bool>,
     pub expected_payment_date: Option<String>,
     pub planned_payment_date: Option<String>,
+    #[serde(default)]
     pub has_attachments: bool,
     #[serde(rename = "RepeatingInvoiceID")]
     pub repeating_invoice_id: Option<Uuid>,
@@ -100,4 +110,67 @@ pub async fn get(client: &Client, invoice_id: Uuid) -> Result<Invoice> {
         .map_err(|_| Error::InvalidEndpoint)?;
     let response: ListResponse = client.get(endpoint, Vec::<String>::default()).await?;
     response.invoices.into_iter().next().ok_or(Error::NotFound)
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+pub enum ContactIdentifier {
+    #[serde(rename = "ContactID")]
+    ID(Uuid),
+    #[serde(rename = "ContactNumber")]
+    Number(String),
+}
+
+impl Default for ContactIdentifier {
+    fn default() -> Self {
+        Self::ID(Uuid::new_v4())
+    }
+}
+
+#[derive(Default, Debug, Clone, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct Builder {
+    #[serde(rename = "Type")]
+    pub r#type: Type,
+    pub contact: ContactIdentifier,
+    pub line_items: Vec<line_item::Builder>,
+    pub date: Option<NaiveDateTime>,
+    pub due_date: Option<NaiveDateTime>,
+    pub line_amount_types: Option<LineAmountType>,
+    pub invoice_number: Option<String>,
+    pub reference: Option<String>,
+    #[serde(rename = "BrandingThemeID")]
+    pub branding_theme_id: Option<Uuid>,
+    pub url: Option<Url>,
+    pub currency_code: Option<String>,
+    pub currency_rate: Option<Decimal>,
+    pub status: Option<Status>,
+    pub sent_to_contact: Option<bool>,
+    pub expected_payment_date: Option<NaiveDateTime>,
+    pub planned_payment_date: Option<NaiveDateTime>,
+}
+
+impl Builder {
+    #[must_use]
+    pub fn new(
+        r#type: Type,
+        contact: ContactIdentifier,
+        line_items: Vec<line_item::Builder>,
+    ) -> Self {
+        Self {
+            r#type,
+            contact,
+            line_items,
+            ..Builder::default()
+        }
+    }
+}
+
+#[instrument(skip(client))]
+pub async fn create(client: &Client, invoice: &Builder) -> Result<Invoice> {
+    let result: MutationResponse = client.put(ENDPOINT, invoice).await?;
+    result
+        .data
+        .get_invoices()
+        .and_then(|inv| inv.into_iter().next())
+        .ok_or(Error::NotFound)
 }

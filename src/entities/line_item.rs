@@ -38,25 +38,25 @@ impl LineItem {
         builder.account_code = self.account_code;
         builder.tax_type = self.tax_type;
         builder.discount_rate = self.discount_rate;
-        builder.line_item_id = self.line_item_id;
+        builder.line_item_id = Some(self.line_item_id);
 
         builder
     }
 }
 
-#[derive(Default, Debug, Serialize)]
+#[derive(Default, Debug, Serialize, Clone)]
 #[serde(rename_all = "PascalCase")]
 pub struct Builder {
-    description: String,
-    quantity: Decimal,
-    unit_amount: Decimal,
-    item_code: Option<String>,
-    account_code: Option<String>,
-    tax_type: String,
-    discount_rate: Option<Decimal>,
+    pub description: String,
+    pub quantity: Decimal,
+    pub unit_amount: Decimal,
+    pub item_code: Option<String>,
+    pub account_code: Option<String>,
+    pub tax_type: String,
+    pub discount_rate: Option<Decimal>,
     // tracking
     #[serde(rename = "LineItemID")]
-    line_item_id: Uuid,
+    pub line_item_id: Option<Uuid>,
 }
 
 impl Builder {
