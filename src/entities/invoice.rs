@@ -1,8 +1,10 @@
-use std::str::FromStr;
+use std::{path::Path, str::FromStr};
 
 use chrono::NaiveDateTime;
+use reqwest::Method;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use url::Url;
 use uuid::Uuid;
 
@@ -96,10 +98,15 @@ struct ListResponse {
     invoices: Vec<Invoice>,
 }
 
+#[derive(Debug, Serialize, Default)]
+pub struct ListParameters {
+    pub r#where: Option<String>,
+}
+
 /// Retrieve a list of invoices.
 #[instrument(skip(client))]
-pub async fn list(client: &Client) -> Result<Vec<Invoice>> {
-    let response: ListResponse = client.get(ENDPOINT, Vec::<String>::default()).await?;
+pub async fn list(client: &Client, parameters: ListParameters) -> Result<Vec<Invoice>> {
+    let response: ListResponse = client.get(ENDPOINT, parameters).await?;
     Ok(response.invoices)
 }
 
@@ -174,4 +181,73 @@ pub async fn create(client: &Client, invoice: &Builder) -> Result<Invoice> {
         .get_invoices()
         .and_then(|inv| inv.into_iter().next())
         .ok_or(Error::NotFound)
+}
+
+pub async fn post_attachment(
+    client: &Client,
+    invoice_id: Uuid,
+    attachment_filename: String,
+    attachment_content: &[u8],
+) -> Result<Value> {
+    // 1. Validate the filename for invalid characters
+    let invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*', '\0'];
+    if attachment_filename
+        .chars()
+        .any(|c| invalid_chars.contains(&c))
+    {
+        return Err(Error::InvalidFilename);
+    }
+
+    // 2. Determine Content-Type based on file extension
+    let extension = Path::new(&attachment_filename)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_lowercase());
+    let content_type = match extension.as_deref() {
+        Some("pdf") => "application/pdf",
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("txt") => "text/plain",
+        Some("csv") => "text/csv",
+        // Add more mappings as needed
+        _ => "application/octet-stream", // Default fallback
+    };
+
+    // 3. Validate attachment size (up to 25 MB)
+    const MAX_ATTACHMENT_SIZE: usize = 25 * 1024 * 1024; // 25 MB
+    if attachment_content.len() > MAX_ATTACHMENT_SIZE {
+        return Err(Error::AttachmentTooLarge);
+    }
+
+    // 4. Construct the URL
+    let endpoint_url = Url::from_str(ENDPOINT)
+        .map_err(|_| Error::InvalidEndpoint)?
+        .join(&format!("{}/", invoice_id.to_string()))
+        .map_err(|_| Error::InvalidEndpoint)?
+        .join("Attachments/")
+        .map_err(|_| Error::InvalidEndpoint)?
+        .join(&attachment_filename)
+        .map_err(|_| Error::InvalidEndpoint)?;
+
+    info!("Posting attachment to {}", endpoint_url);
+
+    // 5. Build and send the POST request
+    let response = client
+        .build_request(Method::POST, endpoint_url)
+        .header(reqwest::header::CONTENT_TYPE, content_type)
+        .header(reqwest::header::CONTENT_LENGTH, attachment_content.len())
+        .body(attachment_content.to_vec())
+        .send()
+        .await
+        .map_err(Error::Request)?;
+
+    // Optional: Handle and log the response
+    if response.status().is_success() {
+        info!("Attachment uploaded successfully.");
+    } else {
+        info!("Failed to upload attachment. Status: {}", response.status());
+    }
+
+    Ok(response.json::<Value>().await.unwrap())
 }

@@ -70,6 +70,12 @@ pub enum Error {
     #[error("error making request: {0:?}")]
     Request(reqwest::Error),
 
+    #[error("invalid filename")]
+    InvalidFilename,
+
+    #[error("attachment too large")]
+    AttachmentTooLarge,
+
     #[error("error decoding response: {0:?} | body: {1:#?}")]
     DeserializationError(serde_json::Error, Option<String>),
 

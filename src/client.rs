@@ -136,7 +136,11 @@ impl Client {
     }
 
     /// Build a request object with authentication headers.
-    fn build_request<U: IntoUrl + fmt::Debug>(&self, method: Method, url: U) -> RequestBuilder {
+    pub(crate) fn build_request<U: IntoUrl + fmt::Debug>(
+        &self,
+        method: Method,
+        url: U,
+    ) -> RequestBuilder {
         self.build_http_client()
             .request(method, url)
             .header(header::ACCEPT, "application/json")

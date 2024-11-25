@@ -12,7 +12,7 @@ async fn get_invoices() -> Result<()> {
         .init();
     let client = xero_rs::Client::from_client_credentials(KeyPair::from_env(), None).await?;
 
-    let invoices = xero_rs::invoice::list(&client).await?;
+    let invoices = xero_rs::invoice::list(&client, vec![]).await?;
     debug!("found {:?} invoices", invoices.len());
 
     let invoice_from_list = invoices.first().unwrap();
