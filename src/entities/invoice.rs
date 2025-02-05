@@ -249,5 +249,5 @@ pub async fn post_attachment(
         info!("Failed to upload attachment. Status: {}", response.status());
     }
 
-    Ok(response.json::<Value>().await.unwrap())
+    Ok(response.json::<Value>().await?)
 }
