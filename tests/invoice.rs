@@ -2,6 +2,7 @@
 extern crate tracing;
 
 use anyhow::Result;
+use xero_rs::invoice::ListParameters;
 use xero_rs::KeyPair;
 
 #[tokio::test]
@@ -12,7 +13,7 @@ async fn get_invoices() -> Result<()> {
         .init();
     let client = xero_rs::Client::from_client_credentials(KeyPair::from_env(), None).await?;
 
-    let invoices = xero_rs::invoice::list(&client, vec![]).await?;
+    let invoices = xero_rs::invoice::list(&client, ListParameters::default()).await?;
     debug!("found {:?} invoices", invoices.len());
 
     let invoice_from_list = invoices.first().unwrap();
