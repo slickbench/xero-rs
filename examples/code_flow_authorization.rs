@@ -9,6 +9,7 @@ use serde::Deserialize;
 use tokio::sync::Mutex;
 use url::Url;
 use warp::Filter;
+use xero_rs::invoice::ListParameters;
 use xero_rs::KeyPair;
 
 lazy_static::lazy_static! {
@@ -69,7 +70,7 @@ async fn main() -> Result<()> {
         connections.first().expect("no connections found").tenant_id,
     ));
 
-    let invoices = xero_rs::invoice::list(&client).await?;
+    let invoices = xero_rs::invoice::list(&client, ListParameters::default()).await?;
     info!("found invoices: {:#?}", invoices);
 
     Ok(())
