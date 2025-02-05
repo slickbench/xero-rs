@@ -32,7 +32,7 @@ async fn get_purchase_orders() -> Result<()> {
 
     let purchase_order_from_list = purchase_orders.first().unwrap();
     let purchase_order =
-        xero_rs::purchase_order::get(&client, purchase_order_from_list.purchase_order_id).await?;
+        purchase_order::get(&client, purchase_order_from_list.purchase_order_id).await?;
     assert_eq!(
         purchase_order_from_list.purchase_order_id,
         purchase_order.purchase_order_id
@@ -55,17 +55,19 @@ async fn create_purchase_order() -> Result<()> {
     let description = "test description";
     let quantity = dec!(3.00);
     let unit_amount = dec!(2.00);
-    let line_items: Vec<line_item::Builder> = vec![line_item::Builder::new(
-        description.to_string(),
-        quantity,
-        unit_amount,
-    )];
+    let mut line_item = line_item::Builder::new();
+
+    line_item.description = Some(description.into());
+    line_item.quantity = Some(quantity.into());
+    line_item.unit_amount = Some(unit_amount.into());
+
+    let line_items = vec![line_item];
 
     let po_builder =
         purchase_order::Builder::new(ContactIdentifier::ID(contact.contact_id), line_items);
     let created_po = purchase_order::create(&client, &po_builder).await?;
 
-    let po = xero_rs::purchase_order::get(&client, created_po.purchase_order_id).await?;
+    let po = purchase_order::get(&client, created_po.purchase_order_id).await?;
     assert_eq!(created_po.purchase_order_id, po.purchase_order_id);
 
     Ok(())
