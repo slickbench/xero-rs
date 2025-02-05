@@ -47,7 +47,7 @@ pub struct Quote {
     pub quote_number: String,
     pub reference: Option<String>,
     pub branding_theme_id: Option<Uuid>,
-    pub title: String,
+    pub title: Option<String>,
     pub summary: Option<String>,
     pub terms: Option<String>,
 }
