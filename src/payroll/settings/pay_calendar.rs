@@ -7,21 +7,21 @@ use crate::{client::Client, error::Result};
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PayCalendar {
-    #[serde(rename = "PayCalendarID")]
+    #[serde(rename = "PayrollCalendarID")]
     pub pay_calendar_id: Uuid,
-    pub calendar_type: String,
     pub name: String,
-    pub period_start_date: String,
-    pub period_end_date: String,
+    pub calendar_type: String,
+    pub start_date: String,
     pub payment_date: String,
     #[serde(rename = "UpdatedDateUTC")]
     pub updated_date_utc: Option<String>,
+    pub reference_date: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PayCalendarResponse {
-    pub pay_calendars: Vec<PayCalendar>,
+    pub payroll_calendars: Vec<PayCalendar>,
 }
 
 /// Lists all pay calendars
@@ -44,9 +44,9 @@ pub async fn list(client: &Client) -> Result<Vec<PayCalendar>> {
 
     debug!(
         "Response contains {} pay calendars",
-        response.pay_calendars.len()
+        response.payroll_calendars.len()
     );
-    Ok(response.pay_calendars)
+    Ok(response.payroll_calendars)
 }
 
 /// Gets a pay calendar by ID
@@ -71,7 +71,7 @@ pub async fn get(client: &Client, pay_calendar_id: Uuid) -> Result<PayCalendar> 
         }
     };
 
-    if response.pay_calendars.is_empty() {
+    if response.payroll_calendars.is_empty() {
         error!("Received empty pay calendars array in response");
         return Err(crate::error::Error::NotFound {
             entity: "PayCalendar".to_string(),
@@ -83,7 +83,7 @@ pub async fn get(client: &Client, pay_calendar_id: Uuid) -> Result<PayCalendar> 
 
     debug!(
         "Response contains {} pay calendars",
-        response.pay_calendars.len()
+        response.payroll_calendars.len()
     );
-    Ok(response.pay_calendars.into_iter().next().unwrap())
+    Ok(response.payroll_calendars.into_iter().next().unwrap())
 }

@@ -1,9 +1,11 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "PascalCase")]
 pub enum TimesheetStatus {
+    #[serde(rename = "DRAFT")]
     Draft,
+    #[serde(rename = "APPROVED")]
     Approved,
+    #[serde(rename = "PROCESSED")]
     Processed,
 }

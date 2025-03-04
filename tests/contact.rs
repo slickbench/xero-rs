@@ -6,7 +6,7 @@ mod test_utils;
 use anyhow::Result;
 use std::env;
 use uuid::Uuid;
-use xero_rs::{KeyPair, Scope};
+use xero_rs::KeyPair;
 
 #[tokio::test]
 async fn list_contacts() -> Result<()> {
@@ -22,7 +22,7 @@ async fn list_contacts() -> Result<()> {
     // Create client with credentials and scopes
     let mut client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id, Some(client_secret)),
-        Some(vec![Scope::accounting_contacts_read()]),
+        xero_rs::Scope::accounting_contacts_read(),
     )
     .await?;
 

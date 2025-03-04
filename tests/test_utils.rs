@@ -4,11 +4,11 @@ use uuid::Uuid;
 
 use std::sync::Once;
 
-use xero_rs::{Client, KeyPair, Scope};
+use xero_rs::{Client, KeyPair};
 
 /// Creates a standard test client with the given scopes
 #[allow(dead_code)]
-pub async fn create_test_client(scopes: Vec<Scope>) -> Result<Client> {
+pub async fn create_test_client(scopes: Option<xero_rs::Scope>) -> Result<Client> {
     // Get environment variables
     let tenant_id = std::env::var("XERO_TENANT_ID").unwrap();
     let client_id = std::env::var("XERO_CLIENT_ID").unwrap();
@@ -16,12 +16,14 @@ pub async fn create_test_client(scopes: Vec<Scope>) -> Result<Client> {
 
     info!("Creating client with tenant_id: {}", tenant_id);
     debug!("Using client_id: {}", client_id);
-    debug!("Using scopes: {:?}", scopes);
+    if let Some(scope) = &scopes {
+        debug!("Using scope: {}", scope);
+    }
 
     // Create client
     let client = match Client::from_client_credentials(
         KeyPair::new(client_id, Some(client_secret)),
-        Some(scopes),
+        scopes,
     )
     .await
     .into_diagnostic()
@@ -43,24 +45,20 @@ pub async fn create_test_client(scopes: Vec<Scope>) -> Result<Client> {
 
 /// Provides common scopes for payroll tests
 #[allow(dead_code)]
-pub fn payroll_scopes() -> Vec<Scope> {
-    vec![
-        Scope::payroll_timesheets(),
-        Scope::payroll_settings(),
-        Scope::payroll_employees(),
-        Scope::payroll_payslip(),
-        Scope::payroll_payruns(),
+pub fn payroll_scopes() -> xero_rs::Scope {
+    xero_rs::scopes![
+        xero_rs::ScopeType::PayrollTimesheets(xero_rs::Permission::ReadWrite),
+        xero_rs::ScopeType::PayrollSettings(xero_rs::Permission::ReadWrite),
+        xero_rs::ScopeType::PayrollEmployees(xero_rs::Permission::ReadWrite),
+        xero_rs::ScopeType::PayrollPayslip(xero_rs::Permission::ReadWrite),
+        xero_rs::ScopeType::PayrollPayruns(xero_rs::Permission::ReadWrite)
     ]
 }
 
 /// Provides common scopes for accounting tests
 #[allow(dead_code)]
-pub fn accounting_scopes() -> Vec<Scope> {
-    vec![
-        Scope::accounting_transactions(),
-        Scope::accounting_contacts(),
-        Scope::accounting_settings(),
-    ]
+pub fn accounting_scopes() -> xero_rs::Scope {
+    xero_rs::Scope::all_accounting()
 }
 
 static LOGGING_CONFIGURED: Once = Once::new();

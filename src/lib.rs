@@ -11,7 +11,8 @@ pub mod oauth;
 pub mod payroll;
 pub mod scope;
 
+pub use error::Error;
 pub use client::Client;
 pub use entities::*;
 pub use oauth::KeyPair;
-pub use scope::Scope;
+pub use scope::{Permission, Scope, ScopeCategory, ScopeType};

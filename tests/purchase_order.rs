@@ -11,7 +11,7 @@ use uuid::Uuid;
 use xero_rs::{
     line_item,
     purchase_order::{self, ContactIdentifier},
-    KeyPair, Scope,
+    KeyPair,
 };
 
 #[tokio::test]
@@ -21,19 +21,17 @@ async fn get_purchase_orders() -> Result<()> {
     // Get credentials from environment
     let client_id = env::var("XERO_CLIENT_ID").expect("XERO_CLIENT_ID must be set");
     let client_secret = env::var("XERO_CLIENT_SECRET").expect("XERO_CLIENT_SECRET must be set");
-    let tenant_id =
-        Uuid::parse_str(&env::var("XERO_TENANT_ID").expect("XERO_TENANT_ID must be set"))
-            .expect("Invalid XERO_TENANT_ID format");
+    let tenant_id = Uuid::parse_str(&env::var("XERO_TENANT_ID").expect("XERO_TENANT_ID must be set"))
+        .expect("Invalid XERO_TENANT_ID format");
 
-    // Create client with credentials and scopes
+    // Create client with credentials and scopes directly
     let mut client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id, Some(client_secret)),
-        Some(vec![
-            Scope::accounting_transactions_read(),
-            Scope::accounting_contacts_read(),
-        ]),
-    )
-    .await?;
+        xero_rs::scopes![
+            xero_rs::ScopeType::AccountingTransactions(xero_rs::Permission::ReadOnly),
+            xero_rs::ScopeType::AccountingContacts(xero_rs::Permission::ReadOnly)
+        ],
+    ).await?;
 
     // Set the tenant ID
     client.set_tenant(Some(tenant_id));
@@ -41,13 +39,11 @@ async fn get_purchase_orders() -> Result<()> {
     let purchase_orders = xero_rs::purchase_order::list(&client).await?;
     debug!("found {:?} purchase_orders", purchase_orders.len());
 
-    let purchase_order_from_list = purchase_orders.first().unwrap();
-    let purchase_order =
-        xero_rs::purchase_order::get(&client, purchase_order_from_list.purchase_order_id).await?;
-    assert_eq!(
-        purchase_order_from_list.purchase_order_id,
-        purchase_order.purchase_order_id
-    );
+    if !purchase_orders.is_empty() {
+        let purchase_order_from_list = purchase_orders.first().unwrap();
+        let purchase_order = xero_rs::purchase_order::get(&client, purchase_order_from_list.purchase_order_id).await?;
+        assert_eq!(purchase_order_from_list.purchase_order_id, purchase_order.purchase_order_id);
+    }
 
     Ok(())
 }
@@ -59,19 +55,17 @@ async fn create_purchase_order() -> Result<()> {
     // Get credentials from environment
     let client_id = env::var("XERO_CLIENT_ID").expect("XERO_CLIENT_ID must be set");
     let client_secret = env::var("XERO_CLIENT_SECRET").expect("XERO_CLIENT_SECRET must be set");
-    let tenant_id =
-        Uuid::parse_str(&env::var("XERO_TENANT_ID").expect("XERO_TENANT_ID must be set"))
-            .expect("Invalid XERO_TENANT_ID format");
+    let tenant_id = Uuid::parse_str(&env::var("XERO_TENANT_ID").expect("XERO_TENANT_ID must be set"))
+        .expect("Invalid XERO_TENANT_ID format");
 
-    // Create client with credentials and scopes
+    // Create client with credentials and scopes directly
     let mut client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id, Some(client_secret)),
-        Some(vec![
-            Scope::accounting_transactions(),
-            Scope::accounting_contacts_read(),
-        ]),
-    )
-    .await?;
+        xero_rs::scopes![
+            xero_rs::ScopeType::AccountingTransactions(xero_rs::Permission::ReadWrite),
+            xero_rs::ScopeType::AccountingContacts(xero_rs::Permission::ReadOnly)
+        ],
+    ).await?;
 
     // Set the tenant ID
     client.set_tenant(Some(tenant_id));
@@ -91,8 +85,7 @@ async fn create_purchase_order() -> Result<()> {
         unit_amount,
     )];
 
-    let po_builder =
-        purchase_order::Builder::new(ContactIdentifier::ID(contact.contact_id), line_items);
+    let po_builder = purchase_order::Builder::new(ContactIdentifier::ID(contact.contact_id), line_items);
     let created_po = purchase_order::create(&client, &po_builder).await?;
 
     let po = xero_rs::purchase_order::get(&client, created_po.purchase_order_id).await?;

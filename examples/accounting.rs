@@ -7,7 +7,10 @@ use xero_rs::{invoice::ListParameters, KeyPair};
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt().init();
-    let client = xero_rs::Client::from_client_credentials(KeyPair::from_env(), None).await?;
+    let client = xero_rs::Client::from_client_credentials(
+        KeyPair::from_env(), 
+        xero_rs::Scope::common_accounting_read()
+    ).await?;
 
     let connections = xero_rs::connection::list(&client).await?;
     info!("found client connections: {:#?}", connections);

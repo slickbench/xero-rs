@@ -2,7 +2,7 @@
 extern crate tracing;
 
 use anyhow::Result;
-use xero_rs::{KeyPair, Scope};
+use xero_rs::KeyPair;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -16,14 +16,14 @@ async fn main() -> Result<()> {
     // Create a client with client credentials and required scopes
     let mut client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id, Some(client_secret)),
-        Some(vec![
-            Scope::accounting_transactions_read(),
-            Scope::payroll_timesheets(),
-            Scope::payroll_settings(),
-            Scope::payroll_employees(),
-            Scope::payroll_payslip(),
-            Scope::payroll_payruns(),
-        ]),
+        xero_rs::scopes![
+            xero_rs::ScopeType::AccountingTransactions(xero_rs::Permission::ReadOnly),
+            xero_rs::ScopeType::PayrollTimesheets(xero_rs::Permission::ReadWrite),
+            xero_rs::ScopeType::PayrollSettings(xero_rs::Permission::ReadWrite), 
+            xero_rs::ScopeType::PayrollEmployees(xero_rs::Permission::ReadWrite),
+            xero_rs::ScopeType::PayrollPayslip(xero_rs::Permission::ReadWrite),
+            xero_rs::ScopeType::PayrollPayruns(xero_rs::Permission::ReadWrite)
+        ],
     )
     .await?;
 

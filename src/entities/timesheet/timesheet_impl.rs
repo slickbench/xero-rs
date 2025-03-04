@@ -190,22 +190,6 @@ impl Timesheet {
         Ok(response.timesheets.into_iter().next().unwrap())
     }
 
-    /// Deletes a timesheet
-    pub async fn delete(client: &crate::client::Client, timesheet_id: Uuid) -> Result<()> {
-        info!("Deleting timesheet with ID: {}", timesheet_id);
-
-        let url = format!("https://api.xero.com/payroll.xro/1.0/Timesheets/{timesheet_id}");
-        debug!("DELETE URL: {}", url);
-
-        match client.delete(&url).await {
-            Ok(()) => {
-                info!("Timesheet deletion successful");
-                Ok(())
-            }
-            Err(e) => {
-                error!("Error deleting timesheet: {:?}", e);
-                Err(e)
-            }
-        }
-    }
+    // Note: Timesheets cannot be deleted via the Xero API. Instead, update their status to "Processed".
+    // The delete method has been removed as it is not supported by the Xero API.
 }

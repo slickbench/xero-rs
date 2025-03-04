@@ -13,14 +13,17 @@ pub enum ScopeCategory {
     Projects,
 }
 
-/// Represents permission level for a scope.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Permission level for a scope
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Permission {
     ReadWrite,
     ReadOnly,
 }
 
-/// Predefined Xero API scopes
+/// Available Xero API scopes
+///
+/// Each scope represents an area of functionality in the Xero API
+/// that can be requested during authentication.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScopeType {
     // Accounting scopes
@@ -51,7 +54,7 @@ pub enum ScopeType {
 }
 
 impl ScopeType {
-    /// Convert a ScopeType to its string representation
+    /// Convert a `ScopeType` to its string representation
     fn to_string(&self) -> String {
         match self {
             // Accounting scopes
@@ -95,7 +98,7 @@ impl ScopeType {
     }
     
     /// Get the category of this scope
-    pub fn category(&self) -> ScopeCategory {
+    #[must_use] pub fn category(&self) -> ScopeCategory {
         match self {
             Self::AccountingTransactions(_) | 
             Self::AccountingReports | 
@@ -180,16 +183,22 @@ impl FromStr for ScopeType {
     }
 }
 
-/// Represents a Xero API scope.
-#[derive(Debug, Clone)]
+/// A collection of `OAuth2` scopes to request access to Xero APIs
+#[derive(Debug, Clone, Default)]
 pub struct Scope {
     scopes: Vec<OAuth2Scope>,
 }
 
 impl Scope {
-    /// Creates a new scope collection
+    /// Creates a new empty scope collection
     #[must_use]
-    pub fn new(scope_types: Vec<ScopeType>) -> Self {
+    pub fn new() -> Self {
+        Self { scopes: Vec::new() }
+    }
+    
+    /// Creates a scope collection from a vector of scope types
+    #[must_use]
+    pub fn from_types(scope_types: Vec<ScopeType>) -> Self {
         let scopes = scope_types
             .into_iter()
             .map(|st| OAuth2Scope::new(st.to_string()))
@@ -205,20 +214,20 @@ impl Scope {
 
     /// Creates a scope from a raw string
     #[must_use]
-    pub fn from_string(scope: String) -> Self {
-        Self { scopes: vec![OAuth2Scope::new(scope)] }
+    pub fn from_string(scope: impl Into<String>) -> Self {
+        Self { scopes: vec![OAuth2Scope::new(scope.into())] }
     }
     
-    /// Add a scope to the collection
+    /// Add a scope to this collection
     #[must_use]
-    pub fn add(mut self, scope_type: ScopeType) -> Self {
+    pub fn with(mut self, scope_type: ScopeType) -> Self {
         self.scopes.push(OAuth2Scope::new(scope_type.to_string()));
         self
     }
     
-    /// Add multiple scopes to the collection
+    /// Add multiple scopes to this collection
     #[must_use]
-    pub fn add_all(mut self, scope_types: Vec<ScopeType>) -> Self {
+    pub fn with_all(mut self, scope_types: impl IntoIterator<Item = ScopeType>) -> Self {
         for scope_type in scope_types {
             self.scopes.push(OAuth2Scope::new(scope_type.to_string()));
         }
@@ -232,22 +241,23 @@ impl Scope {
         self
     }
 
-    /// Converts the scopes into OAuth2 scopes.
+    /// Converts the scopes into a Vec of `OAuth2` scopes
     #[must_use]
     pub fn into_oauth2_scopes(self) -> Vec<OAuth2Scope> {
         self.scopes
     }
     
-    /// Get a reference to the contained OAuth2 scopes
+    /// Get a reference to the contained `OAuth2` scopes
     #[must_use]
     pub fn as_oauth2_scopes(&self) -> &[OAuth2Scope] {
         &self.scopes
     }
     
-    /// Get the first OAuth2 scope (for compatibility with old API)
+    /// Convert this scope collection into a single `OAuth2Scope`
+    /// for use with the oauth2 crate
     #[must_use]
     pub fn into_oauth2(self) -> OAuth2Scope {
-        self.scopes.into_iter().next().unwrap_or_else(|| OAuth2Scope::new("".to_string()))
+        OAuth2Scope::new(self.to_string())
     }
 
     // Accounting scopes
@@ -427,6 +437,74 @@ impl Scope {
     pub fn projects_read() -> Self {
         Self::from_type(ScopeType::Projects(Permission::ReadOnly))
     }
+
+    /// Shorthand for common accounting scopes (read-only)
+    #[must_use]
+    pub fn common_accounting_read() -> Self {
+        crate::scopes![
+            ScopeType::AccountingTransactions(Permission::ReadOnly),
+            ScopeType::AccountingReports,
+            ScopeType::AccountingContacts(Permission::ReadOnly)
+        ]
+    }
+    
+    /// Shorthand for all accounting scopes (read-only)
+    #[must_use] 
+    pub fn all_accounting_read() -> Self {
+        crate::scopes![
+            ScopeType::AccountingTransactions(Permission::ReadOnly),
+            ScopeType::AccountingReports,
+            ScopeType::AccountingReportsTenninetynine,
+            ScopeType::AccountingBudgets,
+            ScopeType::AccountingJournals,
+            ScopeType::AccountingSettings(Permission::ReadOnly),
+            ScopeType::AccountingContacts(Permission::ReadOnly),
+            ScopeType::AccountingAttachments(Permission::ReadOnly)
+        ]
+    }
+    
+    /// Shorthand for all accounting scopes (with read-write permission)
+    #[must_use]
+    pub fn all_accounting() -> Self {
+        crate::scopes![
+            ScopeType::AccountingTransactions(Permission::ReadWrite),
+            ScopeType::AccountingReports,
+            ScopeType::AccountingReportsTenninetynine,
+            ScopeType::AccountingBudgets,
+            ScopeType::AccountingJournals,
+            ScopeType::AccountingSettings(Permission::ReadWrite),
+            ScopeType::AccountingContacts(Permission::ReadWrite),
+            ScopeType::AccountingAttachments(Permission::ReadWrite)
+        ]
+    }
+    
+    /// Shorthand for all scopes (read-only)
+    #[must_use]
+    pub fn all_read() -> Self {
+        Self::all_accounting_read()
+            .with(ScopeType::Assets(Permission::ReadOnly))
+            .with(ScopeType::Files(Permission::ReadOnly))
+            .with(ScopeType::PayrollEmployees(Permission::ReadOnly))
+            .with(ScopeType::PayrollPayruns(Permission::ReadOnly))
+            .with(ScopeType::PayrollPayslip(Permission::ReadOnly))
+            .with(ScopeType::PayrollSettings(Permission::ReadOnly))
+            .with(ScopeType::PayrollTimesheets(Permission::ReadOnly))
+            .with(ScopeType::Projects(Permission::ReadOnly))
+    }
+    
+    /// Shorthand for all scopes (with read-write permission)
+    #[must_use]
+    pub fn all() -> Self {
+        Self::all_accounting()
+            .with(ScopeType::Assets(Permission::ReadWrite))
+            .with(ScopeType::Files(Permission::ReadWrite))
+            .with(ScopeType::PayrollEmployees(Permission::ReadWrite))
+            .with(ScopeType::PayrollPayruns(Permission::ReadWrite))
+            .with(ScopeType::PayrollPayslip(Permission::ReadWrite))
+            .with(ScopeType::PayrollSettings(Permission::ReadWrite))
+            .with(ScopeType::PayrollTimesheets(Permission::ReadWrite))
+            .with(ScopeType::Projects(Permission::ReadWrite))
+    }
 }
 
 impl fmt::Display for Scope {
@@ -452,7 +530,7 @@ impl From<ScopeType> for Scope {
 
 impl From<Vec<ScopeType>> for Scope {
     fn from(scope_types: Vec<ScopeType>) -> Self {
-        Self::new(scope_types)
+        Self::from_types(scope_types)
     }
 }
 
@@ -476,4 +554,28 @@ impl FromIterator<ScopeType> for Scope {
             .collect();
         Self { scopes }
     }
+}
+
+/// Macro to create a complete scope containing multiple scope types
+/// 
+/// # Examples
+/// ```
+/// use xero_rs::{scopes, scope::ScopeType, scope::Permission};
+/// 
+/// let scope = scopes![
+///     ScopeType::AccountingContacts(Permission::ReadOnly),
+///     ScopeType::Files(Permission::ReadWrite)
+/// ];
+/// ```
+#[macro_export]
+macro_rules! scopes {
+    ($($scope:expr),* $(,)?) => {
+        {
+            let mut scope = $crate::scope::Scope::new();
+            $(
+                scope = scope.with($scope);
+            )*
+            scope
+        }
+    };
 }

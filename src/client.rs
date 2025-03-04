@@ -62,47 +62,48 @@ impl Client {
     }
 
     /// Generates an authorization URL to use for the code flow authorization method.
-    #[instrument]
+    #[instrument(skip(scopes))]
     pub fn authorize_url(
         key_pair: KeyPair,
         redirect_url: Url,
-        scopes: Vec<Scope>,
+        scopes: impl Into<Scope>,
     ) -> (Url, CsrfToken) {
+        let scope = scopes.into();
         Self::build_oauth_client(key_pair)
             .set_redirect_uri(oauth2::RedirectUrl::from_url(redirect_url))
             .authorize_url(CsrfToken::new_random)
-            .add_scopes(scopes.into_iter().map(super::scope::Scope::into_oauth2))
+            .add_scopes(vec![scope.into_oauth2()])
             .url()
     }
 
     /// # Errors
     /// Returns an error if the connection can't be made.
-    #[instrument]
+    #[instrument(skip(scopes))]
     pub async fn from_client_credentials(
         key_pair: KeyPair,
-        scopes: Option<Vec<Scope>>,
+        scopes: impl Into<Option<Scope>>,
     ) -> std::result::Result<
         Self,
         oauth2::RequestTokenError<HttpClientError<reqwest::Error>, error::OAuth2ErrorResponse>,
     > {
-        let oauth_client = Self::build_oauth_client(key_pair);
+        let scopes = scopes.into();
+        let client = Self::build_oauth_client(key_pair);
         let http_client = reqwest::Client::new();
 
-        trace!("retrieving access token w/ client credentials grant");
-        let token_result = oauth_client
-            .exchange_client_credentials()
-            .add_scopes(
-                scopes
-                    .unwrap_or_default()
-                    .into_iter()
-                    .map(super::scope::Scope::into_oauth2),
-            )
-            .request_async(&http_client)
-            .await?;
+        let mut request = client.exchange_client_credentials();
+        
+        if let Some(scope) = scopes {
+            request = request.add_scopes(vec![scope.into_oauth2()]);
+        }
+
+        let token = request.request_async(&http_client).await?;
+
+        let access_token = token.access_token().clone();
+        let refresh_token = token.refresh_token().cloned();
 
         Ok(Self {
-            access_token: token_result.access_token().clone(),
-            refresh_token: None,
+            access_token,
+            refresh_token,
             tenant_id: None,
         })
     }
@@ -242,7 +243,12 @@ impl Client {
         if response.status() == StatusCode::NO_CONTENT || response.status() == StatusCode::OK {
             Ok(())
         } else {
-            Err(Error::API(response.json().await?))
+            let content_length = response.content_length().unwrap_or(0);
+            if content_length == 0 {
+                Err(Error::Request(response.error_for_status().unwrap_err()))
+            } else {
+                Err(Error::API(response.json().await?))
+            }
         }
     }
 

@@ -8,7 +8,7 @@ use serde::Deserialize;
 use tokio::sync::Mutex;
 use url::Url;
 use warp::Filter;
-use xero_rs::{invoice::ListParameters, KeyPair, Scope};
+use xero_rs::{invoice::ListParameters, KeyPair};
 
 lazy_static::lazy_static! {
     static ref REDIRECT_ARGS: Arc<Mutex<Option<RedirectArgs>>> = Arc::new(Mutex::new(None));
@@ -47,7 +47,7 @@ async fn main() -> Result<()> {
     let (authorize_url, csrf_token) = xero_rs::Client::authorize_url(
         key_pair.clone(),
         redirect_url.clone(),
-        vec![Scope::accounting_transactions_read()],
+        xero_rs::Scope::accounting_transactions_read(),
     );
     info!("Sign in to Xero: {}", authorize_url.to_string());
 
