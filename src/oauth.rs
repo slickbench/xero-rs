@@ -5,7 +5,6 @@ use oauth2::{
     EndpointNotSet, EndpointSet, RefreshToken, StandardRevocableToken,
 };
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 use crate::error;
 

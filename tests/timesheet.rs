@@ -1,8 +1,5 @@
 use chrono::{Datelike, NaiveDate};
-use miette::{IntoDiagnostic, Result};
 use tracing::{debug, error, info};
-use uuid::Uuid;
-use std::env;
 
 mod test_utils;
 
@@ -10,7 +7,6 @@ use xero_rs::{
     client::Client,
     entities::timesheet::{Timesheet, TimesheetLine, TimesheetStatus, CreateTimesheet},
     payroll::{employee, settings::{earnings_rates, pay_calendar}},
-    KeyPair, XeroScope,
 };
 
 #[tokio::test]
@@ -46,7 +42,7 @@ async fn test_timesheet_crud() -> miette::Result<()> {
 async fn run_test(client: &Client) -> miette::Result<()> {
     // First, get a valid employee ID
     info!("Fetching employees");
-    let employees = match employee::list(&client).await {
+    let employees = match employee::list(client).await {
         Ok(employees) => {
             info!("Found {} employees", employees.len());
             employees
@@ -91,7 +87,7 @@ async fn run_test(client: &Client) -> miette::Result<()> {
         
         // Then, get a valid earnings rate ID
         info!("Fetching earnings rates");
-        let earnings_rates = match earnings_rates::list(&client).await {
+        let earnings_rates = match earnings_rates::list(client).await {
             Ok(rates) => {
                 info!("Found {} earnings rates", rates.len());
                 rates
@@ -193,7 +189,7 @@ async fn run_test(client: &Client) -> miette::Result<()> {
         Ok(())
     } else {
         error!("Employee does not have a payroll calendar ID");
-        return Err(miette::miette!("Employee does not have a payroll calendar ID"));
+        Err(miette::miette!("Employee does not have a payroll calendar ID"))
     }
 }
 

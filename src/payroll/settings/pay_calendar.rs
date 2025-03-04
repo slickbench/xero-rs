@@ -52,7 +52,7 @@ pub async fn list(client: &Client) -> Result<Vec<PayCalendar>> {
 pub async fn get(client: &Client, pay_calendar_id: Uuid) -> Result<PayCalendar> {
     info!("Getting pay calendar with ID: {}", pay_calendar_id);
     
-    let url = format!("https://api.xero.com/payroll.xro/1.0/PayrollCalendars/{}", pay_calendar_id);
+    let url = format!("https://api.xero.com/payroll.xro/1.0/PayrollCalendars/{pay_calendar_id}");
     debug!("GET URL: {}", url);
     
     let response: PayCalendarResponse = match client
@@ -74,7 +74,7 @@ pub async fn get(client: &Client, pay_calendar_id: Uuid) -> Result<PayCalendar> 
             entity: "PayCalendar".to_string(),
             url,
             status_code: reqwest::StatusCode::NOT_FOUND,
-            response_body: Some(format!("{:?}", response)),
+            response_body: Some(format!("{response:?}")),
         });
     }
 

@@ -1,14 +1,12 @@
-use std::str::FromStr;
 
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use url::Url;
 use uuid::Uuid;
 
 use crate::{
     contact::Contact,
     entities::{EntityEndpoint, endpoint_utils},
-    error::{Error, Result},
+    error::Result,
     line_item::{LineAmountType, LineItem},
     Client,
 };
@@ -69,7 +67,7 @@ impl From<ListResponse> for Vec<Quote> {
 #[derive(Debug, Serialize, Default)]
 pub struct ListParameters {}
 
-/// Implementation of EntityEndpoint for Quote
+/// Implementation of `EntityEndpoint` for Quote
 impl EntityEndpoint<Quote, ListParameters> for Quote {
     fn endpoint() -> &'static str {
         ENDPOINT

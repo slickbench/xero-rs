@@ -86,7 +86,7 @@ pub async fn get(client: &Client, purchase_order_id: Uuid) -> Result<PurchaseOrd
             entity: "PurchaseOrder".to_string(),
             url: endpoint_str,
             status_code: reqwest::StatusCode::NOT_FOUND,
-            response_body: Some(format!("Purchase Order with ID {} not found", purchase_order_id)),
+            response_body: Some(format!("Purchase Order with ID {purchase_order_id} not found")),
         })
 }
 

@@ -135,7 +135,7 @@ pub mod endpoint_utils {
             entity: entity_name.to_string(),
             url: endpoint_str,
             status_code: reqwest::StatusCode::NOT_FOUND,
-            response_body: Some(format!("{} with ID {} not found", entity_name, id)),
+            response_body: Some(format!("{entity_name} with ID {id} not found")),
         })
     }
     
@@ -163,7 +163,7 @@ pub trait EntityBuilder<T> {
 /// Helper functions for entity creation
 pub mod builder_utils {
     use serde::{de::DeserializeOwned, Serialize};
-    use uuid::Uuid;
+    
     
     use crate::{Client, error::{Error, Result}};
     

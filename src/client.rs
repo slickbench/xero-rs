@@ -1,7 +1,7 @@
 use core::fmt;
 use std::borrow::Cow;
 
-use oauth2::{AccessToken, AuthorizationCode, CsrfToken, EndpointNotSet, EndpointSet, HttpClientError, RefreshToken, TokenResponse};
+use oauth2::{AccessToken, AuthorizationCode, CsrfToken, HttpClientError, RefreshToken, TokenResponse};
 use reqwest::{header, IntoUrl, Method, RequestBuilder, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 use url::Url;
@@ -69,7 +69,7 @@ impl Client {
         Self::build_oauth_client(key_pair)
             .set_redirect_uri(oauth2::RedirectUrl::from_url(redirect_url))
             .authorize_url(CsrfToken::new_random)
-            .add_scopes(scopes.into_iter().map(|s| s.into_oauth2()))
+            .add_scopes(scopes.into_iter().map(super::scope::XeroScope::into_oauth2))
             .url()
     }
 
@@ -89,7 +89,7 @@ impl Client {
         trace!("retrieving access token w/ client credentials grant");
         let token_result = oauth_client
             .exchange_client_credentials()
-            .add_scopes(scopes.unwrap_or_default().into_iter().map(|s| s.into_oauth2()))
+            .add_scopes(scopes.unwrap_or_default().into_iter().map(super::scope::XeroScope::into_oauth2))
             .request_async(&http_client)
             .await?;
 
@@ -139,7 +139,7 @@ impl Client {
                 .exchange_refresh_token(refresh_token)
                 .request_async(&http_client)
                 .await
-                .map_err(|e| Error::OAuth2(e))?;
+                .map_err(Error::OAuth2)?;
 
             self.access_token = token_result.access_token().clone();
             if let Some(new_refresh_token) = token_result.refresh_token() {

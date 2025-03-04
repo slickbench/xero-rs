@@ -70,6 +70,6 @@ pub async fn get(client: &Client, contact_id: Uuid) -> Result<Contact> {
         entity: "Contact".to_string(),
         url: endpoint_str,
         status_code: reqwest::StatusCode::NOT_FOUND,
-        response_body: Some(format!("Contact with ID {} not found", contact_id)),
+        response_body: Some(format!("Contact with ID {contact_id} not found")),
     })
 }

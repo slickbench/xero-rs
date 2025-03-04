@@ -122,7 +122,7 @@ pub async fn get(client: &Client, invoice_id: Uuid) -> Result<Invoice> {
         entity: "Invoice".to_string(),
         url: endpoint_str,
         status_code: reqwest::StatusCode::NOT_FOUND,
-        response_body: Some(format!("Invoice with ID {} not found", invoice_id)),
+        response_body: Some(format!("Invoice with ID {invoice_id} not found")),
     })
 }
 
@@ -213,11 +213,11 @@ pub async fn post_attachment(
     let extension = Path::new(&attachment_filename)
         .extension()
         .and_then(|ext| ext.to_str())
-        .map(|ext| ext.to_lowercase());
+        .map(str::to_lowercase);
     let content_type = match extension.as_deref() {
         Some("pdf") => "application/pdf",
         Some("png") => "image/png",
-        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("jpg" | "jpeg") => "image/jpeg",
         Some("gif") => "image/gif",
         Some("txt") => "text/plain",
         Some("csv") => "text/csv",
@@ -234,7 +234,7 @@ pub async fn post_attachment(
     // 4. Construct the URL
     let endpoint_url = Url::from_str(ENDPOINT)
         .map_err(|_| Error::InvalidEndpoint)?
-        .join(&format!("{}/", invoice_id.to_string()))
+        .join(&format!("{invoice_id}/"))
         .map_err(|_| Error::InvalidEndpoint)?
         .join("Attachments/")
         .map_err(|_| Error::InvalidEndpoint)?

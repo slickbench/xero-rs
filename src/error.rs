@@ -125,7 +125,7 @@ pub enum Error {
     #[error("encountered forbidden response: {0:#?}")]
     Forbidden(ForbiddenResponse),
 
-    /// An error returned during OAuth2 operations
+    /// An error returned during `OAuth2` operations
     #[error("oauth2 error: {0:?}")]
     OAuth2(oauth2::RequestTokenError<HttpClientError<reqwest::Error>, OAuth2ErrorResponse>),
 }

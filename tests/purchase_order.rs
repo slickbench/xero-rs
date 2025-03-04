@@ -3,7 +3,7 @@ extern crate tracing;
 
 mod test_utils;
 
-use std::{env, sync::Once};
+use std::env;
 
 use anyhow::Result;
 use rust_decimal_macros::dec;

@@ -74,7 +74,7 @@ impl Timesheet {
                 entity: "Timesheet".to_string(),
                 url: url.to_string(),
                 status_code: reqwest::StatusCode::NOT_FOUND,
-                response_body: Some(format!("{:?}", response)),
+                response_body: Some(format!("{response:?}")),
             });
         }
 
@@ -86,7 +86,7 @@ impl Timesheet {
     pub async fn get(client: &crate::client::Client, timesheet_id: Uuid) -> Result<Timesheet> {
         info!("Getting timesheet with ID: {}", timesheet_id);
         
-        let url = format!("https://api.xero.com/payroll.xro/1.0/Timesheets/{}", timesheet_id);
+        let url = format!("https://api.xero.com/payroll.xro/1.0/Timesheets/{timesheet_id}");
         debug!("GET URL: {}", url);
         
         let response: TimesheetResponse = match client
@@ -108,7 +108,7 @@ impl Timesheet {
                 entity: "Timesheet".to_string(),
                 url,
                 status_code: reqwest::StatusCode::NOT_FOUND,
-                response_body: Some(format!("{:?}", response)),
+                response_body: Some(format!("{response:?}")),
             });
         }
 
@@ -172,7 +172,7 @@ impl Timesheet {
                 entity: "Timesheet".to_string(),
                 url,
                 status_code: reqwest::StatusCode::NOT_FOUND,
-                response_body: Some(format!("{:?}", response)),
+                response_body: Some(format!("{response:?}")),
             });
         }
 
@@ -185,13 +185,12 @@ impl Timesheet {
         info!("Deleting timesheet with ID: {}", timesheet_id);
         
         let url = format!(
-            "https://api.xero.com/payroll.xro/1.0/Timesheets/{}",
-            timesheet_id
+            "https://api.xero.com/payroll.xro/1.0/Timesheets/{timesheet_id}"
         );
         debug!("DELETE URL: {}", url);
         
         match client.delete(&url).await {
-            Ok(_) => {
+            Ok(()) => {
                 info!("Timesheet deletion successful");
                 Ok(())
             },
