@@ -57,6 +57,7 @@ pub struct ValidationExceptionElement {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
+#[allow(dead_code)]
 pub struct Response {
     error_number: u64,
     message: String,
@@ -66,6 +67,7 @@ pub struct Response {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
+#[allow(dead_code)]
 pub struct ForbiddenResponse {
     r#type: Option<String>,
     title: String,
@@ -123,7 +125,7 @@ pub enum Error {
     /// An error returned when the user is forbidden by something like an unsuccessful
     /// authentication.
     #[error("encountered forbidden response: {0:#?}")]
-    Forbidden(ForbiddenResponse),
+    Forbidden(Box<ForbiddenResponse>),
 
     /// An error returned during `OAuth2` operations
     #[error("oauth2 error: {0:?}")]
@@ -149,6 +151,12 @@ impl From<oauth2::RequestTokenError<HttpClientError<reqwest::Error>, OAuth2Error
         e: oauth2::RequestTokenError<HttpClientError<reqwest::Error>, OAuth2ErrorResponse>,
     ) -> Self {
         Self::OAuth2(e)
+    }
+}
+
+impl From<ForbiddenResponse> for Error {
+    fn from(response: ForbiddenResponse) -> Self {
+        Self::Forbidden(Box::new(response))
     }
 }
 

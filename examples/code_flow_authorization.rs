@@ -21,6 +21,7 @@ struct RedirectArgs {
 }
 
 #[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)]
 struct CallbackQuery {
     code: String,
     state: String,

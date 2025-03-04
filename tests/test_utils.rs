@@ -7,6 +7,7 @@ use std::sync::Once;
 use xero_rs::{Client, KeyPair, XeroScope};
 
 /// Creates a standard test client with the given scopes
+#[allow(dead_code)]
 pub async fn create_test_client(scopes: Vec<XeroScope>) -> Result<Client> {
     // Get environment variables
     let tenant_id = std::env::var("XERO_TENANT_ID").unwrap();
@@ -41,6 +42,7 @@ pub async fn create_test_client(scopes: Vec<XeroScope>) -> Result<Client> {
 }
 
 /// Provides common scopes for payroll tests
+#[allow(dead_code)]
 pub fn payroll_scopes() -> Vec<XeroScope> {
     vec![
         XeroScope::payroll_timesheets(),
@@ -52,6 +54,7 @@ pub fn payroll_scopes() -> Vec<XeroScope> {
 }
 
 /// Provides common scopes for accounting tests
+#[allow(dead_code)]
 pub fn accounting_scopes() -> Vec<XeroScope> {
     vec![
         XeroScope::accounting_transactions(),
@@ -69,6 +72,7 @@ pub fn do_setup() {
 }
 
 /// Cleanup after test runs
+#[allow(dead_code)]
 pub async fn do_cleanup() {
     // Common cleanup code
     info!("Cleaning up test environment");

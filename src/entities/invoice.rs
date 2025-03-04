@@ -1,4 +1,4 @@
-use std::{path::Path, str::FromStr};
+use std::{path::Path, str::FromStr, ffi::OsStr};
 
 use chrono::NaiveDateTime;
 use reqwest::Method;
@@ -194,27 +194,31 @@ pub async fn create(client: &Client, invoice: &Builder) -> Result<Invoice> {
         })
 }
 
+/// Posts an attachment to the specified invoice
+///
+/// # Panics
+///
+/// This function will panic if the JSON response cannot be properly parsed.
 pub async fn post_attachment(
     client: &Client,
     invoice_id: Uuid,
     attachment_filename: String,
     attachment_content: &[u8],
 ) -> Result<Value> {
-    // 1. Validate the filename for invalid characters
-    let invalid_chars = ['<', '>', ':', '"', '/', '\\', '|', '?', '*', '\0'];
-    if attachment_filename
-        .chars()
-        .any(|c| invalid_chars.contains(&c))
-    {
+    // Define constants first
+    const MAX_ATTACHMENT_SIZE: usize = 25 * 1024 * 1024; // 25 MB
+
+    // 1. Check if filename is valid
+    if attachment_filename.is_empty() {
         return Err(Error::InvalidFilename);
     }
 
-    // 2. Determine Content-Type based on file extension
-    let extension = Path::new(&attachment_filename)
+    // 2. Determine content type from filename extension
+    let ext = Path::new(&attachment_filename)
         .extension()
-        .and_then(|ext| ext.to_str())
-        .map(str::to_lowercase);
-    let content_type = match extension.as_deref() {
+        .and_then(OsStr::to_str);
+
+    let content_type = match ext {
         Some("pdf") => "application/pdf",
         Some("png") => "image/png",
         Some("jpg" | "jpeg") => "image/jpeg",
@@ -226,7 +230,6 @@ pub async fn post_attachment(
     };
 
     // 3. Validate attachment size (up to 25 MB)
-    const MAX_ATTACHMENT_SIZE: usize = 25 * 1024 * 1024; // 25 MB
     if attachment_content.len() > MAX_ATTACHMENT_SIZE {
         return Err(Error::AttachmentTooLarge);
     }

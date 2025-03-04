@@ -152,14 +152,14 @@ async fn run_test(client: &Client) -> miette::Result<()> {
 
         for day_offset in 0..days_in_period {
             let date = start + chrono::Duration::days(day_offset);
-            let is_weekday = match date.weekday() {
+            let is_weekday = matches!(
+                date.weekday(),
                 chrono::Weekday::Mon
                 | chrono::Weekday::Tue
                 | chrono::Weekday::Wed
                 | chrono::Weekday::Thu
-                | chrono::Weekday::Fri => true,
-                _ => false,
-            };
+                | chrono::Weekday::Fri
+            );
 
             // Assign 8 hours for weekdays, 0 for weekends
             let hours = if is_weekday { 8.0 } else { 0.0 };
@@ -219,10 +219,12 @@ async fn run_test(client: &Client) -> miette::Result<()> {
     }
 }
 
+#[allow(dead_code)]
 async fn do_setup() {
     // Any setup code
 }
 
+#[allow(dead_code)]
 async fn do_cleanup() {
     // Any cleanup code
 }

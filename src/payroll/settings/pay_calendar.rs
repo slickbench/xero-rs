@@ -50,6 +50,10 @@ pub async fn list(client: &Client) -> Result<Vec<PayCalendar>> {
 }
 
 /// Gets a pay calendar by ID
+/// 
+/// # Panics
+/// 
+/// This function will panic if the response contains pay calendars but the first element cannot be accessed.
 pub async fn get(client: &Client, pay_calendar_id: Uuid) -> Result<PayCalendar> {
     info!("Getting pay calendar with ID: {}", pay_calendar_id);
 

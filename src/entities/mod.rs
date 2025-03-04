@@ -98,10 +98,10 @@ pub trait EntityEndpoint<T, ListParams = ()> {
     fn endpoint() -> &'static str;
 
     /// Get entity by ID
-    async fn get(client: &crate::Client, id: uuid::Uuid) -> crate::error::Result<T>;
+    fn get(client: &crate::Client, id: uuid::Uuid) -> impl std::future::Future<Output = crate::error::Result<T>> + Send;
 
     /// List entities with optional parameters
-    async fn list(client: &crate::Client, params: ListParams) -> crate::error::Result<Vec<T>>;
+    fn list(client: &crate::Client, params: ListParams) -> impl std::future::Future<Output = crate::error::Result<Vec<T>>> + Send;
 }
 
 /// Generic implementation for entity CRUD operations
@@ -153,7 +153,7 @@ pub mod endpoint_utils {
 /// Trait for entity builders
 pub trait EntityBuilder<T> {
     /// Build and create the entity via the API
-    async fn create(self, client: &crate::Client) -> crate::error::Result<T>;
+    fn create(self, client: &crate::Client) -> impl std::future::Future<Output = crate::error::Result<T>> + Send;
 }
 
 /// Helper functions for entity creation

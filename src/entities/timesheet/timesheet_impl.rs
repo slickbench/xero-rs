@@ -45,6 +45,10 @@ pub struct TimesheetResponse {
 
 impl Timesheet {
     /// Creates a new timesheet
+    /// 
+    /// # Panics
+    /// 
+    /// This function will panic if the response contains timesheets but the first element cannot be accessed.
     pub async fn create(
         client: &crate::client::Client,
         timesheet: &CreateTimesheet,
@@ -84,6 +88,10 @@ impl Timesheet {
     }
 
     /// Gets a timesheet by ID
+    /// 
+    /// # Panics
+    /// 
+    /// This function will panic if the response contains timesheets but the first element cannot be accessed.
     pub async fn get(client: &crate::client::Client, timesheet_id: Uuid) -> Result<Timesheet> {
         info!("Getting timesheet with ID: {}", timesheet_id);
 
@@ -138,6 +146,10 @@ impl Timesheet {
     }
 
     /// Updates a timesheet
+    /// 
+    /// # Panics
+    /// 
+    /// This function will panic if the response contains timesheets but the first element cannot be accessed.
     pub async fn update(
         client: &crate::client::Client,
         timesheet: &Timesheet,
