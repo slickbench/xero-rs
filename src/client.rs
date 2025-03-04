@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::error::{self, Error, Result};
 use crate::oauth::{KeyPair, OAuthClient};
-use crate::scope::XeroScope;
+use crate::scope::Scope;
 
 const XERO_AUTH_URL: &str = "https://login.xero.com/identity/connect/authorize";
 const XERO_TOKEN_URL: &str = "https://identity.xero.com/connect/token";
@@ -66,12 +66,12 @@ impl Client {
     pub fn authorize_url(
         key_pair: KeyPair,
         redirect_url: Url,
-        scopes: Vec<XeroScope>,
+        scopes: Vec<Scope>,
     ) -> (Url, CsrfToken) {
         Self::build_oauth_client(key_pair)
             .set_redirect_uri(oauth2::RedirectUrl::from_url(redirect_url))
             .authorize_url(CsrfToken::new_random)
-            .add_scopes(scopes.into_iter().map(super::scope::XeroScope::into_oauth2))
+            .add_scopes(scopes.into_iter().map(super::scope::Scope::into_oauth2))
             .url()
     }
 
@@ -80,7 +80,7 @@ impl Client {
     #[instrument]
     pub async fn from_client_credentials(
         key_pair: KeyPair,
-        scopes: Option<Vec<XeroScope>>,
+        scopes: Option<Vec<Scope>>,
     ) -> std::result::Result<
         Self,
         oauth2::RequestTokenError<HttpClientError<reqwest::Error>, error::OAuth2ErrorResponse>,
@@ -95,7 +95,7 @@ impl Client {
                 scopes
                     .unwrap_or_default()
                     .into_iter()
-                    .map(super::scope::XeroScope::into_oauth2),
+                    .map(super::scope::Scope::into_oauth2),
             )
             .request_async(&http_client)
             .await?;

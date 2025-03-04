@@ -11,7 +11,7 @@ use uuid::Uuid;
 use xero_rs::{
     line_item,
     purchase_order::{self, ContactIdentifier},
-    KeyPair, XeroScope,
+    KeyPair, Scope,
 };
 
 #[tokio::test]
@@ -29,8 +29,8 @@ async fn get_purchase_orders() -> Result<()> {
     let mut client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id, Some(client_secret)),
         Some(vec![
-            XeroScope::accounting_transactions_read(),
-            XeroScope::accounting_contacts_read(),
+            Scope::accounting_transactions_read(),
+            Scope::accounting_contacts_read(),
         ]),
     )
     .await?;
@@ -67,8 +67,8 @@ async fn create_purchase_order() -> Result<()> {
     let mut client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id, Some(client_secret)),
         Some(vec![
-            XeroScope::accounting_transactions(),
-            XeroScope::accounting_contacts_read(),
+            Scope::accounting_transactions(),
+            Scope::accounting_contacts_read(),
         ]),
     )
     .await?;

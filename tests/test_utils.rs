@@ -4,11 +4,11 @@ use uuid::Uuid;
 
 use std::sync::Once;
 
-use xero_rs::{Client, KeyPair, XeroScope};
+use xero_rs::{Client, KeyPair, Scope};
 
 /// Creates a standard test client with the given scopes
 #[allow(dead_code)]
-pub async fn create_test_client(scopes: Vec<XeroScope>) -> Result<Client> {
+pub async fn create_test_client(scopes: Vec<Scope>) -> Result<Client> {
     // Get environment variables
     let tenant_id = std::env::var("XERO_TENANT_ID").unwrap();
     let client_id = std::env::var("XERO_CLIENT_ID").unwrap();
@@ -43,23 +43,23 @@ pub async fn create_test_client(scopes: Vec<XeroScope>) -> Result<Client> {
 
 /// Provides common scopes for payroll tests
 #[allow(dead_code)]
-pub fn payroll_scopes() -> Vec<XeroScope> {
+pub fn payroll_scopes() -> Vec<Scope> {
     vec![
-        XeroScope::payroll_timesheets(),
-        XeroScope::payroll_settings(),
-        XeroScope::payroll_employees(),
-        XeroScope::payroll_payslip(),
-        XeroScope::payroll_payruns(),
+        Scope::payroll_timesheets(),
+        Scope::payroll_settings(),
+        Scope::payroll_employees(),
+        Scope::payroll_payslip(),
+        Scope::payroll_payruns(),
     ]
 }
 
 /// Provides common scopes for accounting tests
 #[allow(dead_code)]
-pub fn accounting_scopes() -> Vec<XeroScope> {
+pub fn accounting_scopes() -> Vec<Scope> {
     vec![
-        XeroScope::accounting_transactions(),
-        XeroScope::accounting_contacts(),
-        XeroScope::accounting_settings(),
+        Scope::accounting_transactions(),
+        Scope::accounting_contacts(),
+        Scope::accounting_settings(),
     ]
 }
 

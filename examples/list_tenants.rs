@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::env;
 use tracing::{error, info};
-use xero_rs::{oauth::KeyPair, Client, XeroScope};
+use xero_rs::{oauth::KeyPair, Client, Scope};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -13,9 +13,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let client_secret = env::var("XERO_CLIENT_SECRET").expect("XERO_CLIENT_SECRET must be set");
 
     let scopes = vec![
-        XeroScope::accounting_transactions(),
-        XeroScope::accounting_settings(),
-        XeroScope::accounting_contacts(),
+        Scope::accounting_transactions(),
+        Scope::accounting_settings(),
+        Scope::accounting_contacts(),
     ];
 
     info!("Creating client with credentials...");

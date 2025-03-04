@@ -14,4 +14,4 @@ pub mod scope;
 pub use client::Client;
 pub use entities::*;
 pub use oauth::KeyPair;
-pub use scope::XeroScope;
+pub use scope::Scope;
