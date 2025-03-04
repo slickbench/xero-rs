@@ -10,7 +10,8 @@ async fn main() -> Result<()> {
 
     // Get credentials from environment
     let client_id = std::env::var("XERO_CLIENT_ID").expect("XERO_CLIENT_ID must be set");
-    let client_secret = std::env::var("XERO_CLIENT_SECRET").expect("XERO_CLIENT_SECRET must be set");
+    let client_secret =
+        std::env::var("XERO_CLIENT_SECRET").expect("XERO_CLIENT_SECRET must be set");
 
     // Create a client with client credentials and required scopes
     let mut client = xero_rs::Client::from_client_credentials(
@@ -38,4 +39,4 @@ async fn main() -> Result<()> {
     info!("Found {} timesheets", timesheets.len());
 
     Ok(())
-} 
+}

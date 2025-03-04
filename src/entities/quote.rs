@@ -1,11 +1,10 @@
-
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
     contact::Contact,
-    entities::{EntityEndpoint, endpoint_utils},
+    entities::{endpoint_utils, EntityEndpoint},
     error::Result,
     line_item::{LineAmountType, LineItem},
     Client,
@@ -72,11 +71,11 @@ impl EntityEndpoint<Quote, ListParameters> for Quote {
     fn endpoint() -> &'static str {
         ENDPOINT
     }
-    
+
     async fn get(client: &Client, id: Uuid) -> Result<Quote> {
         endpoint_utils::get::<Quote, ListResponse>(client, ENDPOINT, id, "Quote").await
     }
-    
+
     async fn list(client: &Client, params: ListParameters) -> Result<Vec<Quote>> {
         endpoint_utils::list::<Quote, ListResponse, _>(client, ENDPOINT, params).await
     }

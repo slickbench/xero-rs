@@ -28,8 +28,7 @@ struct CallbackQuery {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .init();
+    tracing_subscriber::fmt().init();
 
     tokio::spawn(async move {
         let redirect = warp::get()
@@ -47,9 +46,7 @@ async fn main() -> Result<()> {
     let (authorize_url, csrf_token) = xero_rs::Client::authorize_url(
         key_pair.clone(),
         redirect_url.clone(),
-        vec![
-            XeroScope::accounting_transactions_read(),
-        ],
+        vec![XeroScope::accounting_transactions_read()],
     );
     info!("Sign in to Xero: {}", authorize_url.to_string());
 

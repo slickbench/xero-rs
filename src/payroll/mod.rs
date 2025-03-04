@@ -1,2 +1,2 @@
 pub mod employee;
-pub mod settings; 
+pub mod settings;

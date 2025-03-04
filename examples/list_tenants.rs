@@ -2,9 +2,9 @@
 extern crate tracing;
 
 use anyhow::Result;
-use xero_rs::{oauth::KeyPair, Client, XeroScope};
 use std::env;
 use tracing::{error, info};
+use xero_rs::{oauth::KeyPair, Client, XeroScope};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -22,7 +22,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     info!("Creating client with credentials...");
-    let client = match Client::from_client_credentials(KeyPair::new(client_id, Some(client_secret)), Some(scopes)).await {
+    let client = match Client::from_client_credentials(
+        KeyPair::new(client_id, Some(client_secret)),
+        Some(scopes),
+    )
+    .await
+    {
         Ok(client) => client,
         Err(e) => {
             error!("Failed to create client: {:?}", e);
@@ -49,4 +54,4 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
-} 
+}

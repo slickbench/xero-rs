@@ -1,7 +1,9 @@
 use core::fmt;
 use std::borrow::Cow;
 
-use oauth2::{AccessToken, AuthorizationCode, CsrfToken, HttpClientError, RefreshToken, TokenResponse};
+use oauth2::{
+    AccessToken, AuthorizationCode, CsrfToken, HttpClientError, RefreshToken, TokenResponse,
+};
 use reqwest::{header, IntoUrl, Method, RequestBuilder, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 use url::Url;
@@ -48,11 +50,11 @@ impl Client {
     #[instrument]
     fn build_oauth_client(key_pair: KeyPair) -> OAuthClient {
         let client = oauth2::Client::new(key_pair.0);
-        
+
         let client = client
             .set_auth_uri(oauth2::AuthUrl::new(XERO_AUTH_URL.to_string()).unwrap())
             .set_token_uri(oauth2::TokenUrl::new(XERO_TOKEN_URL.to_string()).unwrap());
-            
+
         match key_pair.1 {
             Some(secret) => client.set_client_secret(secret),
             None => client,
@@ -89,7 +91,12 @@ impl Client {
         trace!("retrieving access token w/ client credentials grant");
         let token_result = oauth_client
             .exchange_client_credentials()
-            .add_scopes(scopes.unwrap_or_default().into_iter().map(super::scope::XeroScope::into_oauth2))
+            .add_scopes(
+                scopes
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(super::scope::XeroScope::into_oauth2),
+            )
             .request_async(&http_client)
             .await?;
 
@@ -245,13 +252,22 @@ impl Client {
     ) -> Result<T> {
         let status = response.status();
         let url = response.url().to_string();
-        let entity_type = std::any::type_name::<T>().split("::").last().unwrap_or("Unknown").to_string();
-        
-        tracing::debug!("Response from {}: status={}, entity_type={}", url, status, entity_type);
-        
+        let entity_type = std::any::type_name::<T>()
+            .split("::")
+            .last()
+            .unwrap_or("Unknown")
+            .to_string();
+
+        tracing::debug!(
+            "Response from {}: status={}, entity_type={}",
+            url,
+            status,
+            entity_type
+        );
+
         let text = response.text().await?;
         tracing::debug!("Response body: {}", text);
-        
+
         let handle_deserialize_error = {
             let text = text.clone();
             |e: serde_json::Error| Error::DeserializationError(e, Some(text))
@@ -265,14 +281,12 @@ impl Client {
                 response_body: Some(text),
             }),
             status => match status {
-                StatusCode::OK => {
-                    match serde_json::from_str(&text) {
-                        Ok(result) => Ok(result),
-                        Err(e) => {
-                            tracing::error!("Failed to deserialize response: {}", e);
-                            tracing::error!("Response body: {}", text);
-                            Err(handle_deserialize_error(e))
-                        }
+                StatusCode::OK => match serde_json::from_str(&text) {
+                    Ok(result) => Ok(result),
+                    Err(e) => {
+                        tracing::error!("Failed to deserialize response: {}", e);
+                        tracing::error!("Response body: {}", text);
+                        Err(handle_deserialize_error(e))
                     }
                 },
                 StatusCode::FORBIDDEN => Err(Error::Forbidden(
@@ -284,7 +298,7 @@ impl Client {
                     Err(Error::API(
                         serde_json::from_str(&text).map_err(handle_deserialize_error)?,
                     ))
-                },
+                }
             },
         }
     }

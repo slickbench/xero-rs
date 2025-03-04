@@ -17,12 +17,13 @@ use xero_rs::{
 #[tokio::test]
 async fn get_purchase_orders() -> Result<()> {
     test_utils::do_setup();
-    
+
     // Get credentials from environment
     let client_id = env::var("XERO_CLIENT_ID").expect("XERO_CLIENT_ID must be set");
     let client_secret = env::var("XERO_CLIENT_SECRET").expect("XERO_CLIENT_SECRET must be set");
-    let tenant_id = Uuid::parse_str(&env::var("XERO_TENANT_ID").expect("XERO_TENANT_ID must be set"))
-        .expect("Invalid XERO_TENANT_ID format");
+    let tenant_id =
+        Uuid::parse_str(&env::var("XERO_TENANT_ID").expect("XERO_TENANT_ID must be set"))
+            .expect("Invalid XERO_TENANT_ID format");
 
     // Create client with credentials and scopes
     let mut client = xero_rs::Client::from_client_credentials(
@@ -31,7 +32,8 @@ async fn get_purchase_orders() -> Result<()> {
             XeroScope::accounting_transactions_read(),
             XeroScope::accounting_contacts_read(),
         ]),
-    ).await?;
+    )
+    .await?;
 
     // Set the tenant ID
     client.set_tenant(Some(tenant_id));
@@ -53,12 +55,13 @@ async fn get_purchase_orders() -> Result<()> {
 #[tokio::test]
 async fn create_purchase_order() -> Result<()> {
     test_utils::do_setup();
-    
+
     // Get credentials from environment
     let client_id = env::var("XERO_CLIENT_ID").expect("XERO_CLIENT_ID must be set");
     let client_secret = env::var("XERO_CLIENT_SECRET").expect("XERO_CLIENT_SECRET must be set");
-    let tenant_id = Uuid::parse_str(&env::var("XERO_TENANT_ID").expect("XERO_TENANT_ID must be set"))
-        .expect("Invalid XERO_TENANT_ID format");
+    let tenant_id =
+        Uuid::parse_str(&env::var("XERO_TENANT_ID").expect("XERO_TENANT_ID must be set"))
+            .expect("Invalid XERO_TENANT_ID format");
 
     // Create client with credentials and scopes
     let mut client = xero_rs::Client::from_client_credentials(
@@ -67,7 +70,8 @@ async fn create_purchase_order() -> Result<()> {
             XeroScope::accounting_transactions(),
             XeroScope::accounting_contacts_read(),
         ]),
-    ).await?;
+    )
+    .await?;
 
     // Set the tenant ID
     client.set_tenant(Some(tenant_id));

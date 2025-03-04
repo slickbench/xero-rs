@@ -6,4 +6,4 @@ pub enum TimesheetStatus {
     Draft,
     Approved,
     Processed,
-} 
+}

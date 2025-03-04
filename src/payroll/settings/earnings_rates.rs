@@ -47,4 +47,4 @@ struct ListResponse {
 pub async fn list(client: &Client) -> Result<Vec<EarningsRate>> {
     let response: ListResponse = client.get(ENDPOINT, Vec::<String>::default()).await?;
     Ok(response.pay_items.earnings_rates)
-} 
+}

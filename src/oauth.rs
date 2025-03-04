@@ -46,11 +46,11 @@ pub type OAuthClient = oauth2::Client<
     BasicTokenIntrospectionResponse,
     StandardRevocableToken,
     error::OAuth2ErrorResponse,
-    EndpointSet,       // HasAuthUrl
-    EndpointNotSet,    // HasDeviceAuthUrl
-    EndpointNotSet,    // HasIntrospectionUrl
-    EndpointNotSet,    // HasRevocationUrl
-    EndpointSet,       // HasTokenUrl
+    EndpointSet,    // HasAuthUrl
+    EndpointNotSet, // HasDeviceAuthUrl
+    EndpointNotSet, // HasIntrospectionUrl
+    EndpointNotSet, // HasRevocationUrl
+    EndpointSet,    // HasTokenUrl
 >;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -64,7 +64,7 @@ pub struct TokenResponse {
 
 impl oauth2::TokenResponse for TokenResponse {
     type TokenType = BasicTokenType;
-    
+
     fn access_token(&self) -> &oauth2::AccessToken {
         &self.access_token
     }

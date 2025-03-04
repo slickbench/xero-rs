@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
-use uuid::Uuid;
 use tracing::{debug, error, info};
+use uuid::Uuid;
 
 use crate::{client::Client, error::Result};
 
@@ -27,46 +27,45 @@ pub struct PayCalendarResponse {
 /// Lists all pay calendars
 pub async fn list(client: &Client) -> Result<Vec<PayCalendar>> {
     info!("Listing pay calendars");
-    
+
     let url = "https://api.xero.com/payroll.xro/1.0/PayrollCalendars";
     debug!("GET URL: {}", url);
-    
-    let response: PayCalendarResponse = match client
-        .get(url, &())
-        .await {
-            Ok(response) => {
-                info!("Pay calendars retrieval successful");
-                response
-            },
-            Err(e) => {
-                error!("Error retrieving pay calendars: {:?}", e);
-                return Err(e);
-            }
-        };
-    
-    debug!("Response contains {} pay calendars", response.pay_calendars.len());
+
+    let response: PayCalendarResponse = match client.get(url, &()).await {
+        Ok(response) => {
+            info!("Pay calendars retrieval successful");
+            response
+        }
+        Err(e) => {
+            error!("Error retrieving pay calendars: {:?}", e);
+            return Err(e);
+        }
+    };
+
+    debug!(
+        "Response contains {} pay calendars",
+        response.pay_calendars.len()
+    );
     Ok(response.pay_calendars)
 }
 
 /// Gets a pay calendar by ID
 pub async fn get(client: &Client, pay_calendar_id: Uuid) -> Result<PayCalendar> {
     info!("Getting pay calendar with ID: {}", pay_calendar_id);
-    
+
     let url = format!("https://api.xero.com/payroll.xro/1.0/PayrollCalendars/{pay_calendar_id}");
     debug!("GET URL: {}", url);
-    
-    let response: PayCalendarResponse = match client
-        .get(&url, &())
-        .await {
-            Ok(response) => {
-                info!("Pay calendar retrieval successful");
-                response
-            },
-            Err(e) => {
-                error!("Error retrieving pay calendar: {:?}", e);
-                return Err(e);
-            }
-        };
+
+    let response: PayCalendarResponse = match client.get(&url, &()).await {
+        Ok(response) => {
+            info!("Pay calendar retrieval successful");
+            response
+        }
+        Err(e) => {
+            error!("Error retrieving pay calendar: {:?}", e);
+            return Err(e);
+        }
+    };
 
     if response.pay_calendars.is_empty() {
         error!("Received empty pay calendars array in response");
@@ -78,6 +77,9 @@ pub async fn get(client: &Client, pay_calendar_id: Uuid) -> Result<PayCalendar> 
         });
     }
 
-    debug!("Response contains {} pay calendars", response.pay_calendars.len());
+    debug!(
+        "Response contains {} pay calendars",
+        response.pay_calendars.len()
+    );
     Ok(response.pay_calendars.into_iter().next().unwrap())
-} 
+}

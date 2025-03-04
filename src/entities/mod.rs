@@ -2,10 +2,7 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use self::{
-    contact::Contact,
-    invoice::Invoice,
-    purchase_order::PurchaseOrder,
-    quote::Quote,
+    contact::Contact, invoice::Invoice, purchase_order::PurchaseOrder, quote::Quote,
     timesheet::Timesheet,
 };
 
@@ -99,10 +96,10 @@ pub struct MutationResponse {
 pub trait EntityEndpoint<T, ListParams = ()> {
     /// The API endpoint URL for this entity
     fn endpoint() -> &'static str;
-    
+
     /// Get entity by ID
     async fn get(client: &crate::Client, id: uuid::Uuid) -> crate::error::Result<T>;
-    
+
     /// List entities with optional parameters
     async fn list(client: &crate::Client, params: ListParams) -> crate::error::Result<Vec<T>>;
 }
@@ -110,19 +107,22 @@ pub trait EntityEndpoint<T, ListParams = ()> {
 /// Generic implementation for entity CRUD operations
 pub mod endpoint_utils {
     use serde::de::DeserializeOwned;
-    use url::Url;
     use std::str::FromStr;
+    use url::Url;
     use uuid::Uuid;
-    
-    use crate::{Client, error::{Error, Result}};
-    
+
+    use crate::{
+        error::{Error, Result},
+        Client,
+    };
+
     /// Generic function to get a single entity by ID
     pub async fn get<T, R>(
-        client: &Client, 
-        endpoint: &str, 
-        id: Uuid, 
-        entity_name: &str
-    ) -> Result<T> 
+        client: &Client,
+        endpoint: &str,
+        id: Uuid,
+        entity_name: &str,
+    ) -> Result<T>
     where
         R: DeserializeOwned + Into<Vec<T>>,
     {
@@ -138,13 +138,9 @@ pub mod endpoint_utils {
             response_body: Some(format!("{entity_name} with ID {id} not found")),
         })
     }
-    
+
     /// Generic function to list entities with optional parameters
-    pub async fn list<T, R, P>(
-        client: &Client,
-        endpoint: &str,
-        params: P,
-    ) -> Result<Vec<T>>
+    pub async fn list<T, R, P>(client: &Client, endpoint: &str, params: P) -> Result<Vec<T>>
     where
         R: DeserializeOwned + Into<Vec<T>>,
         P: serde::Serialize + std::fmt::Debug,
@@ -163,16 +159,14 @@ pub trait EntityBuilder<T> {
 /// Helper functions for entity creation
 pub mod builder_utils {
     use serde::{de::DeserializeOwned, Serialize};
-    
-    
-    use crate::{Client, error::{Error, Result}};
-    
+
+    use crate::{
+        error::{Error, Result},
+        Client,
+    };
+
     /// Generic function to create a new entity
-    pub async fn create<T, R, B>(
-        client: &Client,
-        endpoint: &str,
-        builder: &B,
-    ) -> Result<T>
+    pub async fn create<T, R, B>(client: &Client, endpoint: &str, builder: &B) -> Result<T>
     where
         T: DeserializeOwned,
         R: DeserializeOwned + Into<Option<T>>,

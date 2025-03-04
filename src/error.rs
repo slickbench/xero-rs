@@ -142,8 +142,12 @@ impl From<serde_json::Error> for Error {
     }
 }
 
-impl From<oauth2::RequestTokenError<HttpClientError<reqwest::Error>, OAuth2ErrorResponse>> for Error {
-    fn from(e: oauth2::RequestTokenError<HttpClientError<reqwest::Error>, OAuth2ErrorResponse>) -> Self {
+impl From<oauth2::RequestTokenError<HttpClientError<reqwest::Error>, OAuth2ErrorResponse>>
+    for Error
+{
+    fn from(
+        e: oauth2::RequestTokenError<HttpClientError<reqwest::Error>, OAuth2ErrorResponse>,
+    ) -> Self {
         Self::OAuth2(e)
     }
 }

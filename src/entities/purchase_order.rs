@@ -86,7 +86,9 @@ pub async fn get(client: &Client, purchase_order_id: Uuid) -> Result<PurchaseOrd
             entity: "PurchaseOrder".to_string(),
             url: endpoint_str,
             status_code: reqwest::StatusCode::NOT_FOUND,
-            response_body: Some(format!("Purchase Order with ID {purchase_order_id} not found")),
+            response_body: Some(format!(
+                "Purchase Order with ID {purchase_order_id} not found"
+            )),
         })
 }
 
@@ -149,6 +151,8 @@ pub async fn create(client: &Client, purchase_order: &Builder) -> Result<Purchas
             entity: "PurchaseOrder".to_string(),
             url: ENDPOINT.to_string(),
             status_code: reqwest::StatusCode::NOT_FOUND,
-            response_body: Some("Failed to create purchase order - no purchase order in response".to_string()),
+            response_body: Some(
+                "Failed to create purchase order - no purchase order in response".to_string(),
+            ),
         })
 }

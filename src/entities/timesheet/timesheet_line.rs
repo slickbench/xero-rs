@@ -8,4 +8,4 @@ pub struct TimesheetLine {
     pub date: String,
     pub earnings_rate_id: Uuid,
     pub number_of_units: Vec<f64>,
-} 
+}

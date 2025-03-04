@@ -40,4 +40,4 @@ struct ListResponse {
 pub async fn list(client: &Client) -> Result<Vec<Employee>> {
     let response: ListResponse = client.get(ENDPOINT, Vec::<String>::default()).await?;
     Ok(response.employees)
-} 
+}
