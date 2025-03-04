@@ -2,9 +2,10 @@ use std::time::Duration;
 
 use oauth2::{
     basic::{BasicTokenIntrospectionResponse, BasicTokenType},
-    RefreshToken, StandardRevocableToken,
+    EndpointNotSet, EndpointSet, RefreshToken, StandardRevocableToken,
 };
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 use crate::error;
 
@@ -43,10 +44,14 @@ impl KeyPair {
 pub type OAuthClient = oauth2::Client<
     error::OAuth2ErrorResponse,
     TokenResponse,
-    BasicTokenType,
     BasicTokenIntrospectionResponse,
     StandardRevocableToken,
     error::OAuth2ErrorResponse,
+    EndpointSet,       // HasAuthUrl
+    EndpointNotSet,    // HasDeviceAuthUrl
+    EndpointNotSet,    // HasIntrospectionUrl
+    EndpointNotSet,    // HasRevocationUrl
+    EndpointSet,       // HasTokenUrl
 >;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -58,11 +63,13 @@ pub struct TokenResponse {
     refresh_token: Option<RefreshToken>,
 }
 
-impl oauth2::TokenResponse<BasicTokenType> for TokenResponse {
+impl oauth2::TokenResponse for TokenResponse {
+    type TokenType = BasicTokenType;
+    
     fn access_token(&self) -> &oauth2::AccessToken {
         &self.access_token
     }
-    fn token_type(&self) -> &BasicTokenType {
+    fn token_type(&self) -> &Self::TokenType {
         &self.token_type
     }
 

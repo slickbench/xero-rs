@@ -116,8 +116,14 @@ pub async fn get(client: &Client, invoice_id: Uuid) -> Result<Invoice> {
     let endpoint = Url::from_str(ENDPOINT)
         .and_then(|endpoint| endpoint.join(&invoice_id.to_string()))
         .map_err(|_| Error::InvalidEndpoint)?;
+    let endpoint_str = endpoint.to_string();
     let response: ListResponse = client.get(endpoint, Vec::<String>::default()).await?;
-    response.invoices.into_iter().next().ok_or(Error::NotFound)
+    response.invoices.into_iter().next().ok_or(Error::NotFound {
+        entity: "Invoice".to_string(),
+        url: endpoint_str,
+        status_code: reqwest::StatusCode::NOT_FOUND,
+        response_body: Some(format!("Invoice with ID {} not found", invoice_id)),
+    })
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -180,7 +186,12 @@ pub async fn create(client: &Client, invoice: &Builder) -> Result<Invoice> {
         .data
         .get_invoices()
         .and_then(|inv| inv.into_iter().next())
-        .ok_or(Error::NotFound)
+        .ok_or(Error::NotFound {
+            entity: "Invoice".to_string(),
+            url: ENDPOINT.to_string(),
+            status_code: reqwest::StatusCode::NOT_FOUND,
+            response_body: Some("Failed to create invoice - no invoice in response".to_string()),
+        })
 }
 
 pub async fn post_attachment(

@@ -64,6 +64,12 @@ pub async fn get(client: &Client, contact_id: Uuid) -> Result<Contact> {
     let endpoint = Url::from_str(ENDPOINT)
         .and_then(|endpoint| endpoint.join(&contact_id.to_string()))
         .map_err(|_| Error::InvalidEndpoint)?;
+    let endpoint_str = endpoint.to_string();
     let response: ListResponse = client.get(endpoint, Vec::<String>::default()).await?;
-    response.contacts.into_iter().next().ok_or(Error::NotFound)
+    response.contacts.into_iter().next().ok_or(Error::NotFound {
+        entity: "Contact".to_string(),
+        url: endpoint_str,
+        status_code: reqwest::StatusCode::NOT_FOUND,
+        response_body: Some(format!("Contact with ID {} not found", contact_id)),
+    })
 }

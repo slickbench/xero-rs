@@ -4,12 +4,11 @@ extern crate tracing;
 use std::{convert::Infallible, str::FromStr, sync::Arc, time::Duration};
 
 use anyhow::Result;
-use oauth2::Scope;
 use serde::Deserialize;
 use tokio::sync::Mutex;
 use url::Url;
 use warp::Filter;
-use xero_rs::KeyPair;
+use xero_rs::{invoice::ListParameters, KeyPair, XeroScope};
 
 lazy_static::lazy_static! {
     static ref REDIRECT_ARGS: Arc<Mutex<Option<RedirectArgs>>> = Arc::new(Mutex::new(None));
@@ -21,10 +20,15 @@ struct RedirectArgs {
     state: Option<String>,
 }
 
+#[derive(Debug, serde::Deserialize)]
+struct CallbackQuery {
+    code: String,
+    state: String,
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
-        .with_env_filter("info,xero_rs=trace")
         .init();
 
     tokio::spawn(async move {
@@ -44,10 +48,7 @@ async fn main() -> Result<()> {
         key_pair.clone(),
         redirect_url.clone(),
         vec![
-            Scope::new("openid".to_string()),
-            Scope::new("profile".to_string()),
-            Scope::new("email".to_string()),
-            Scope::new("accounting.transactions.read".to_string()),
+            XeroScope::accounting_transactions_read(),
         ],
     );
     info!("Sign in to Xero: {}", authorize_url.to_string());
@@ -61,16 +62,16 @@ async fn main() -> Result<()> {
     };
     assert_eq!(&state.expect("missing state"), csrf_token.secret());
 
-    let mut client = xero_rs::Client::from_authorization_code(key_pair, redirect_url, code).await?;
-
+    let client = xero_rs::Client::from_authorization_code(key_pair, redirect_url, code).await?;
     let connections = xero_rs::connection::list(&client).await?;
     info!("found client connections: {:#?}", connections);
-    client.set_tenant(Some(
-        connections.first().expect("no connections found").tenant_id,
-    ));
 
-    let invoices = xero_rs::invoice::list(&client).await?;
-    info!("found invoices: {:#?}", invoices);
+    let tenant_id = connections.first().expect("No connections found").tenant_id;
+    let mut client = client;
+    client.set_tenant(Some(tenant_id));
+
+    let invoices = xero_rs::invoice::list(&client, ListParameters::default()).await?;
+    info!("Found {} invoices", invoices.len());
 
     Ok(())
 }

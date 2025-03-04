@@ -7,6 +7,7 @@ use uuid::Uuid;
 
 use crate::{
     contact::Contact,
+    entities::{EntityEndpoint, endpoint_utils},
     error::{Error, Result},
     line_item::{LineAmountType, LineItem},
     Client,
@@ -52,25 +53,45 @@ pub struct Quote {
     pub terms: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 #[serde(rename_all = "PascalCase")]
 struct ListResponse {
     quotes: Vec<Quote>,
 }
 
+impl From<ListResponse> for Vec<Quote> {
+    fn from(response: ListResponse) -> Self {
+        response.quotes
+    }
+}
+
+/// Empty parameters struct for quote listing (could be extended with filters if needed)
+#[derive(Debug, Serialize, Default)]
+pub struct ListParameters {}
+
+/// Implementation of EntityEndpoint for Quote
+impl EntityEndpoint<Quote, ListParameters> for Quote {
+    fn endpoint() -> &'static str {
+        ENDPOINT
+    }
+    
+    async fn get(client: &Client, id: Uuid) -> Result<Quote> {
+        endpoint_utils::get::<Quote, ListResponse>(client, ENDPOINT, id, "Quote").await
+    }
+    
+    async fn list(client: &Client, params: ListParameters) -> Result<Vec<Quote>> {
+        endpoint_utils::list::<Quote, ListResponse, _>(client, ENDPOINT, params).await
+    }
+}
+
 /// Retrieve a list of quotes.
 #[instrument(skip(client))]
 pub async fn list(client: &Client) -> Result<Vec<Quote>> {
-    let response: ListResponse = client.get(ENDPOINT, Vec::<String>::default()).await?;
-    Ok(response.quotes)
+    Quote::list(client, ListParameters::default()).await
 }
 
 /// Retrieve a single quote by it's `quote_id`.
 #[instrument(skip(client))]
 pub async fn get(client: &Client, quote_id: Uuid) -> Result<Quote> {
-    let endpoint = Url::from_str(ENDPOINT)
-        .and_then(|endpoint| endpoint.join(&quote_id.to_string()))
-        .map_err(|_| Error::InvalidEndpoint)?;
-    let response: ListResponse = client.get(endpoint, Vec::<String>::default()).await?;
-    response.quotes.into_iter().next().ok_or(Error::NotFound)
+    Quote::get(client, quote_id).await
 }

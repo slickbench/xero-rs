@@ -76,12 +76,18 @@ pub async fn get(client: &Client, purchase_order_id: Uuid) -> Result<PurchaseOrd
     let endpoint = Url::from_str(ENDPOINT)
         .and_then(|endpoint| endpoint.join(&purchase_order_id.to_string()))
         .map_err(|_| Error::InvalidEndpoint)?;
+    let endpoint_str = endpoint.to_string();
     let response: ListResponse = client.get(endpoint, Vec::<String>::default()).await?;
     response
         .purchase_orders
         .into_iter()
         .next()
-        .ok_or(Error::NotFound)
+        .ok_or(Error::NotFound {
+            entity: "PurchaseOrder".to_string(),
+            url: endpoint_str,
+            status_code: reqwest::StatusCode::NOT_FOUND,
+            response_body: Some(format!("Purchase Order with ID {} not found", purchase_order_id)),
+        })
 }
 
 #[derive(Debug, Serialize)]
@@ -139,5 +145,10 @@ pub async fn create(client: &Client, purchase_order: &Builder) -> Result<Purchas
         .data
         .get_purchase_orders()
         .and_then(|po| po.into_iter().next())
-        .ok_or(Error::NotFound)
+        .ok_or(Error::NotFound {
+            entity: "PurchaseOrder".to_string(),
+            url: ENDPOINT.to_string(),
+            status_code: reqwest::StatusCode::NOT_FOUND,
+            response_body: Some("Failed to create purchase order - no purchase order in response".to_string()),
+        })
 }

@@ -1,16 +1,15 @@
 use core::fmt;
 use std::borrow::Cow;
 
-use oauth2::{AccessToken, AuthorizationCode, CsrfToken, RefreshToken, TokenResponse};
+use oauth2::{AccessToken, AuthorizationCode, CsrfToken, EndpointNotSet, EndpointSet, HttpClientError, RefreshToken, TokenResponse};
 use reqwest::{header, IntoUrl, Method, RequestBuilder, StatusCode};
 use serde::{de::DeserializeOwned, Serialize};
 use url::Url;
-
-pub use oauth2::Scope;
 use uuid::Uuid;
 
 use crate::error::{self, Error, Result};
 use crate::oauth::{KeyPair, OAuthClient};
+use crate::scope::XeroScope;
 
 const XERO_AUTH_URL: &str = "https://login.xero.com/identity/connect/authorize";
 const XERO_TOKEN_URL: &str = "https://identity.xero.com/connect/token";
@@ -48,12 +47,16 @@ impl Client {
 
     #[instrument]
     fn build_oauth_client(key_pair: KeyPair) -> OAuthClient {
-        oauth2::Client::new(
-            key_pair.0,
-            key_pair.1,
-            oauth2::AuthUrl::new(XERO_AUTH_URL.to_string()).unwrap(),
-            Some(oauth2::TokenUrl::new(XERO_TOKEN_URL.to_string()).unwrap()),
-        )
+        let client = oauth2::Client::new(key_pair.0);
+        
+        let client = client
+            .set_auth_uri(oauth2::AuthUrl::new(XERO_AUTH_URL.to_string()).unwrap())
+            .set_token_uri(oauth2::TokenUrl::new(XERO_TOKEN_URL.to_string()).unwrap());
+            
+        match key_pair.1 {
+            Some(secret) => client.set_client_secret(secret),
+            None => client,
+        }
     }
 
     /// Generates an authorization URL to use for the code flow authorization method.
@@ -61,12 +64,12 @@ impl Client {
     pub fn authorize_url(
         key_pair: KeyPair,
         redirect_url: Url,
-        scopes: Vec<Scope>,
+        scopes: Vec<XeroScope>,
     ) -> (Url, CsrfToken) {
         Self::build_oauth_client(key_pair)
             .set_redirect_uri(oauth2::RedirectUrl::from_url(redirect_url))
             .authorize_url(CsrfToken::new_random)
-            .add_scopes(scopes)
+            .add_scopes(scopes.into_iter().map(|s| s.into_oauth2()))
             .url()
     }
 
@@ -75,21 +78,19 @@ impl Client {
     #[instrument]
     pub async fn from_client_credentials(
         key_pair: KeyPair,
-        scopes: Option<Vec<Scope>>,
+        scopes: Option<Vec<XeroScope>>,
     ) -> std::result::Result<
         Self,
-        oauth2::RequestTokenError<
-            oauth2::reqwest::Error<reqwest::Error>,
-            error::OAuth2ErrorResponse,
-        >,
+        oauth2::RequestTokenError<HttpClientError<reqwest::Error>, error::OAuth2ErrorResponse>,
     > {
         let oauth_client = Self::build_oauth_client(key_pair);
+        let http_client = reqwest::Client::new();
 
         trace!("retrieving access token w/ client credentials grant");
         let token_result = oauth_client
             .exchange_client_credentials()
-            .add_scopes(scopes.unwrap_or_default())
-            .request_async(oauth2::reqwest::async_http_client)
+            .add_scopes(scopes.unwrap_or_default().into_iter().map(|s| s.into_oauth2()))
+            .request_async(&http_client)
             .await?;
 
         Ok(Self {
@@ -110,23 +111,42 @@ impl Client {
         code: String,
     ) -> std::result::Result<
         Self,
-        oauth2::RequestTokenError<
-            oauth2::reqwest::Error<reqwest::Error>,
-            error::OAuth2ErrorResponse,
-        >,
+        oauth2::RequestTokenError<HttpClientError<reqwest::Error>, error::OAuth2ErrorResponse>,
     > {
-        let oauth_client = Self::build_oauth_client(key_pair);
+        let oauth_client = Self::build_oauth_client(key_pair.clone());
+        let http_client = reqwest::Client::new();
+
         let token_result = oauth_client
             .exchange_code(AuthorizationCode::new(code))
             .set_redirect_uri(Cow::Owned(oauth2::RedirectUrl::from_url(redirect_url)))
-            .request_async(oauth2::reqwest::async_http_client)
+            .request_async(&http_client)
             .await?;
 
         Ok(Self {
             access_token: token_result.access_token().clone(),
-            refresh_token: None,
+            refresh_token: token_result.refresh_token().cloned(),
             tenant_id: None,
         })
+    }
+
+    /// Refreshes the access token using the refresh token.
+    pub async fn refresh_access_token(&mut self, key_pair: KeyPair) -> Result<()> {
+        let oauth_client = Self::build_oauth_client(key_pair);
+        let http_client = reqwest::Client::new();
+
+        if let Some(refresh_token) = &self.refresh_token {
+            let token_result = oauth_client
+                .exchange_refresh_token(refresh_token)
+                .request_async(&http_client)
+                .await
+                .map_err(|e| Error::OAuth2(e))?;
+
+            self.access_token = token_result.access_token().clone();
+            if let Some(new_refresh_token) = token_result.refresh_token() {
+                self.refresh_token = Some(new_refresh_token.clone());
+            }
+        }
+        Ok(())
     }
 
     /// Sets the tenant ID for this client.
@@ -207,27 +227,64 @@ impl Client {
         .await
     }
 
+    /// Perform an authenticated `DELETE` request against the API.
+    #[instrument(skip(self))]
+    pub async fn delete<U: IntoUrl + fmt::Debug>(&self, url: U) -> Result<()> {
+        trace!(?url, "making DELETE request");
+        let response = self.build_request(Method::DELETE, url).send().await?;
+        if response.status() == StatusCode::NO_CONTENT || response.status() == StatusCode::OK {
+            Ok(())
+        } else {
+            Err(Error::API(response.json().await?))
+        }
+    }
+
     #[instrument(skip(response))]
     async fn handle_response<T: DeserializeOwned + Sized>(
         response: reqwest::Response,
     ) -> Result<T> {
         let status = response.status();
+        let url = response.url().to_string();
+        let entity_type = std::any::type_name::<T>().split("::").last().unwrap_or("Unknown").to_string();
+        
+        tracing::debug!("Response from {}: status={}, entity_type={}", url, status, entity_type);
+        
         let text = response.text().await?;
+        tracing::debug!("Response body: {}", text);
+        
         let handle_deserialize_error = {
             let text = text.clone();
             |e: serde_json::Error| Error::DeserializationError(e, Some(text))
         };
 
         match status {
-            StatusCode::NOT_FOUND => Err(Error::NotFound),
+            StatusCode::NOT_FOUND => Err(Error::NotFound {
+                entity: entity_type,
+                url,
+                status_code: status,
+                response_body: Some(text),
+            }),
             status => match status {
-                StatusCode::OK => serde_json::from_str(&text).map_err(handle_deserialize_error),
+                StatusCode::OK => {
+                    match serde_json::from_str(&text) {
+                        Ok(result) => Ok(result),
+                        Err(e) => {
+                            tracing::error!("Failed to deserialize response: {}", e);
+                            tracing::error!("Response body: {}", text);
+                            Err(handle_deserialize_error(e))
+                        }
+                    }
+                },
                 StatusCode::FORBIDDEN => Err(Error::Forbidden(
                     serde_json::from_str(&text).map_err(handle_deserialize_error)?,
                 )),
-                _ => Err(Error::API(
-                    serde_json::from_str(&text).map_err(handle_deserialize_error)?,
-                )),
+                _ => {
+                    tracing::error!("Unexpected status code: {}", status);
+                    tracing::error!("Response body: {}", text);
+                    Err(Error::API(
+                        serde_json::from_str(&text).map_err(handle_deserialize_error)?,
+                    ))
+                },
             },
         }
     }
