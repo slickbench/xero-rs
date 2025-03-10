@@ -1,15 +1,13 @@
 use chrono::{Datelike, NaiveDate, NaiveDateTime};
 use tracing::{debug, error, info};
+use time::Date as TimeDate;
 
 mod test_utils;
 
 use xero_rs::{
     client::Client,
     entities::timesheet::{CreateTimesheet, Timesheet, TimesheetLine, TimesheetStatus},
-    payroll::{
-        employee,
-        settings::{earnings_rates, pay_calendar},
-    },
+    payroll::settings::pay_calendar::CalendarType,
 };
 
 #[tokio::test]
@@ -94,90 +92,24 @@ async fn run_test(client: &Client) -> miette::Result<()> {
             start_date, end_date
         );
 
-        // Then, get a valid earnings rate ID
-        info!("Fetching earnings rates");
-        let earnings_rates = match client.earnings_rates().list().await {
-            Ok(rates) => {
-                info!("Found {} earnings rates", rates.len());
-                rates
-            }
-            Err(e) => {
-                error!("Failed to fetch earnings rates: {:?}", e);
-                return Err(miette::miette!("Failed to fetch earnings rates: {:?}", e));
-            }
-        };
-
-        if earnings_rates.is_empty() {
-            error!("No earnings rates found in the Xero account");
-            return Err(miette::miette!(
-                "No earnings rates found in the Xero account"
-            ));
+        // Helper function to convert time::Date to chrono::NaiveDate
+        fn time_date_to_chrono(date: TimeDate) -> NaiveDate {
+            NaiveDate::from_ymd_opt(
+                date.year(),
+                date.month() as u32,
+                date.day() as u32,
+            ).unwrap()
         }
 
-        let earnings_rate = &earnings_rates[0];
-        info!(
-            "Using earnings rate: ID={}, Name={}",
-            earnings_rate.earnings_rate_id, earnings_rate.name
-        );
-
-        // Helper function to parse Xero date format
-        fn parse_xero_date(xero_date: &str) -> Result<String, &'static str> {
-            // Xero date format looks like: /Date(1741996800000+0000)/
-            let regex_pattern = r"/Date\((\d+)(?:[-+]\d{4})?\)/";
-            let re = regex::Regex::new(regex_pattern).unwrap();
-            
-            if let Some(captures) = re.captures(xero_date) {
-                if let Some(timestamp_match) = captures.get(1) {
-                    let timestamp_ms: i64 = timestamp_match
-                        .as_str()
-                        .parse()
-                        .map_err(|_| "Failed to parse timestamp as i64")?;
-                    
-                    // Convert milliseconds to seconds for chrono
-                    let timestamp_sec = timestamp_ms / 1000;
-                    
-                    // Convert Unix timestamp to NaiveDateTime
-                    let datetime = NaiveDateTime::from_timestamp_opt(timestamp_sec, 0)
-                        .ok_or("Invalid timestamp")?;
-                    
-                    // Format the date as YYYY-MM-DD
-                    return Ok(datetime.format("%Y-%m-%d").to_string());
-                }
-            }
-            
-            Err("Failed to parse Xero date format")
-        }
-
-        // Parse dates to calculate number of units
-        let parsed_start_date = match parse_xero_date(&start_date) {
-            Ok(date) => date,
-            Err(e) => {
-                return Err(miette::miette!(
-                    "Failed to parse start date {}: {}",
-                    start_date,
-                    e
-                ))
-            }
-        };
-
-        // Parse the start date
-        let start = match NaiveDate::parse_from_str(&parsed_start_date, "%Y-%m-%d") {
-            Ok(date) => date,
-            Err(e) => {
-                return Err(miette::miette!(
-                    "Failed to parse parsed start date {}: {}",
-                    parsed_start_date,
-                    e
-                ))
-            }
-        };
-
+        // Convert the dates to chrono::NaiveDate for the rest of the code
+        let start = time_date_to_chrono(start_date);
+                
         // Calculate end date based on calendar type
         // For a FORTNIGHTLY calendar, add 13 days (2 weeks - 1 day) to the start date
-        let end = match pay_calendar.calendar_type.as_str() {
-            "FORTNIGHTLY" => start + chrono::Duration::days(13),
-            "WEEKLY" => start + chrono::Duration::days(6),
-            "MONTHLY" => {
+        let end = match pay_calendar.calendar_type {
+            CalendarType::Fortnightly => start + chrono::Duration::days(13),
+            CalendarType::Weekly => start + chrono::Duration::days(6),
+            CalendarType::Monthly => {
                 // For a monthly calendar, go to the end of the month
                 let (year, month, _) = (start.year(), start.month(), start.day());
                 let days_in_month = if month == 12 {
@@ -185,12 +117,29 @@ async fn run_test(client: &Client) -> miette::Result<()> {
                 } else {
                     NaiveDate::from_ymd_opt(year, month + 1, 1).unwrap()
                 };
-                days_in_month.pred() // Last day of the month
+                days_in_month.pred_opt().unwrap() // Last day of the month
+            }
+            CalendarType::TwiceMonthly => {
+                // For twice-monthly, if we're in the first half, go to the 15th,
+                // if we're in the second half, go to the end of the month
+                let day = start.day();
+                if day <= 15 {
+                    NaiveDate::from_ymd_opt(start.year(), start.month(), 15).unwrap()
+                } else {
+                    // Go to the end of the month (same as Monthly)
+                    let (year, month, _) = (start.year(), start.month(), start.day());
+                    let days_in_month = if month == 12 {
+                        NaiveDate::from_ymd_opt(year + 1, 1, 1).unwrap()
+                    } else {
+                        NaiveDate::from_ymd_opt(year, month + 1, 1).unwrap()
+                    };
+                    days_in_month.pred_opt().unwrap() // Last day of the month
+                }
             }
             _ => {
-                // Default to two weeks if we don't recognize the calendar type
-                start + chrono::Duration::days(13)
-            }
+                // Default to 6 days after start (one week minus one day)
+                start + chrono::Duration::days(6)
+            },
         };
 
         // Format dates for API
@@ -225,6 +174,32 @@ async fn run_test(client: &Client) -> miette::Result<()> {
             number_of_units.push(hours);
             total_hours += hours;
         }
+
+        // Then, get a valid earnings rate ID
+        info!("Fetching earnings rates");
+        let earnings_rates = match client.earnings_rates().list().await {
+            Ok(rates) => {
+                info!("Found {} earnings rates", rates.len());
+                rates
+            }
+            Err(e) => {
+                error!("Failed to fetch earnings rates: {:?}", e);
+                return Err(miette::miette!("Failed to fetch earnings rates: {:?}", e));
+            }
+        };
+
+        if earnings_rates.is_empty() {
+            error!("No earnings rates found in the Xero account");
+            return Err(miette::miette!(
+                "No earnings rates found in the Xero account"
+            ));
+        }
+
+        let earnings_rate = &earnings_rates[0];
+        info!(
+            "Using earnings rate: ID={}, Name={}",
+            earnings_rate.earnings_rate_id, earnings_rate.name
+        );
 
         // Create a test timesheet
         let timesheet_line = TimesheetLine {

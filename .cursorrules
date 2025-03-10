@@ -7,3 +7,5 @@ Always implement tests and include doc comments for new public APIs. Tests are s
 Always run `cargo check` after a major refactor, and fix any errors or warnings that pop up.
 
 Use the `time` library for datetimes, `miette` for error handling, `reqwest` for API requests, and `oauth2` for authentication
+
+Backwards compatibility is not important, but make sure not to remove or break any existing functionality unrelated to what we're working on.

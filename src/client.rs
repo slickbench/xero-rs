@@ -688,14 +688,21 @@ impl<'a> EarningsRatesApi<'a> {
     }
 }
 
-/// API handler for Pay Calendars endpoints
-#[derive(Debug)]
+/// API client for interacting with Xero Payroll Calendars
+///
+/// This API provides methods for listing, retrieving, and creating pay calendars.
 pub struct PayCalendarsApi<'a> {
     client: &'a Client,
 }
 
 impl<'a> PayCalendarsApi<'a> {
     /// Retrieve a list of pay calendars
+    ///
+    /// Returns all pay calendars defined in the Xero organization.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API request fails.
     #[instrument(skip(self))]
     pub async fn list(&self) -> Result<Vec<PayCalendar>> {
         let url = "https://api.xero.com/payroll.xro/1.0/PayrollCalendars";
@@ -704,6 +711,16 @@ impl<'a> PayCalendarsApi<'a> {
     }
     
     /// Get a pay calendar by ID
+    ///
+    /// Retrieves a specific pay calendar using its unique identifier.
+    ///
+    /// # Arguments
+    ///
+    /// * `pay_calendar_id` - The UUID of the pay calendar to retrieve
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the pay calendar is not found or if the API request fails.
     #[instrument(skip(self))]
     pub async fn get(&self, pay_calendar_id: Uuid) -> Result<PayCalendar> {
         let url = format!("https://api.xero.com/payroll.xro/1.0/PayrollCalendars/{pay_calendar_id}");
@@ -715,6 +732,38 @@ impl<'a> PayCalendarsApi<'a> {
                 url,
                 status_code: StatusCode::NOT_FOUND,
                 response_body: Some(format!("Pay Calendar with ID {pay_calendar_id} not found")),
+            });
+        }
+        
+        Ok(response.payroll_calendars.into_iter().next().unwrap())
+    }
+    
+    /// Create a new pay calendar
+    ///
+    /// Creates a new pay calendar with the specified details.
+    ///
+    /// # Arguments
+    ///
+    /// * `pay_calendar` - The pay calendar details to create
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API request fails or if the response doesn't contain the created pay calendar.
+    #[instrument(skip(self, pay_calendar))]
+    pub async fn create(&self, pay_calendar: &pay_calendar::CreatePayCalendar) -> Result<PayCalendar> {
+        let url = "https://api.xero.com/payroll.xro/1.0/PayrollCalendars";
+        
+        // Create a vector with a single pay calendar
+        let request = vec![pay_calendar.clone()];
+        
+        let response: pay_calendar::PayCalendarResponse = self.client.post(url, &request).await?;
+        
+        if response.payroll_calendars.is_empty() {
+            return Err(Error::NotFound {
+                entity: "PayCalendar".to_string(),
+                url: url.to_string(),
+                status_code: StatusCode::OK,
+                response_body: Some("No pay calendar was returned after creation".to_string()),
             });
         }
         
