@@ -27,6 +27,7 @@ This was put together as part of the requirements for a private project so I wil
 
 - Client credential & code flow authorization support
 - Generic GET, PUT, and POST methods for custom requests
+- Type-safe API endpoint construction via `XeroEndpoint` enum
 - Uses [rust_decimal](https://github.com/paupino/rust-decimal) for storing prices/decimal values
 - Well tested (that's the goal, at least)
 
@@ -35,6 +36,7 @@ This was put together as part of the requirements for a private project so I wil
 This has been implemented so far:
 
 - OAuth2 Authentication (Client Credentials, Authorization Code Flow)
+- Type-safe API URL construction with `XeroEndpoint`
 - List authorized connections (tennants)
 - Quotes
   - List

@@ -1,4 +1,4 @@
-use std::{path::Path, str::FromStr, ffi::OsStr};
+use std::{path::Path, ffi::OsStr};
 
 use chrono::NaiveDateTime;
 use reqwest::Method;
@@ -10,14 +10,13 @@ use uuid::Uuid;
 
 use crate::{
     contact::Contact,
+    endpoints::XeroEndpoint,
     error::{Error, Result},
     line_item::{LineAmountType, LineItem},
     Client,
 };
 
-use super::{line_item, MutationResponse};
-
-pub const ENDPOINT: &str = "https://api.xero.com/api.xro/2.0/Invoices/";
+use super::{line_item};
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum Type {
@@ -94,36 +93,13 @@ pub struct Invoice {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct ListResponse {
-    invoices: Vec<Invoice>,
+pub(crate) struct ListResponse {
+    pub invoices: Vec<Invoice>,
 }
 
 #[derive(Debug, Serialize, Default)]
 pub struct ListParameters {
     pub r#where: Option<String>,
-}
-
-/// Retrieve a list of invoices.
-#[instrument(skip(client))]
-pub async fn list(client: &Client, parameters: ListParameters) -> Result<Vec<Invoice>> {
-    let response: ListResponse = client.get(ENDPOINT, parameters).await?;
-    Ok(response.invoices)
-}
-
-/// Retrieve a single invoice by it's `invoice_id`.
-#[instrument(skip(client))]
-pub async fn get(client: &Client, invoice_id: Uuid) -> Result<Invoice> {
-    let endpoint = Url::from_str(ENDPOINT)
-        .and_then(|endpoint| endpoint.join(&invoice_id.to_string()))
-        .map_err(|_| Error::InvalidEndpoint)?;
-    let endpoint_str = endpoint.to_string();
-    let response: ListResponse = client.get(endpoint, Vec::<String>::default()).await?;
-    response.invoices.into_iter().next().ok_or(Error::NotFound {
-        entity: "Invoice".to_string(),
-        url: endpoint_str,
-        status_code: reqwest::StatusCode::NOT_FOUND,
-        response_body: Some(format!("Invoice with ID {invoice_id} not found")),
-    })
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -179,26 +155,8 @@ impl Builder {
     }
 }
 
-#[instrument(skip(client))]
-pub async fn create(client: &Client, invoice: &Builder) -> Result<Invoice> {
-    let result: MutationResponse = client.put(ENDPOINT, invoice).await?;
-    result
-        .data
-        .get_invoices()
-        .and_then(|inv| inv.into_iter().next())
-        .ok_or(Error::NotFound {
-            entity: "Invoice".to_string(),
-            url: ENDPOINT.to_string(),
-            status_code: reqwest::StatusCode::NOT_FOUND,
-            response_body: Some("Failed to create invoice - no invoice in response".to_string()),
-        })
-}
-
-/// Posts an attachment to the specified invoice
-///
-/// # Panics
-///
-/// This function will panic if the JSON response cannot be properly parsed.
+/// Post an attachment to an invoice.
+#[instrument(skip(client, attachment_content))]
 pub async fn post_attachment(
     client: &Client,
     invoice_id: Uuid,
@@ -234,34 +192,24 @@ pub async fn post_attachment(
         return Err(Error::AttachmentTooLarge);
     }
 
-    // 4. Construct the URL
-    let endpoint_url = Url::from_str(ENDPOINT)
-        .map_err(|_| Error::InvalidEndpoint)?
-        .join(&format!("{invoice_id}/"))
-        .map_err(|_| Error::InvalidEndpoint)?
-        .join("Attachments/")
-        .map_err(|_| Error::InvalidEndpoint)?
-        .join(&attachment_filename)
-        .map_err(|_| Error::InvalidEndpoint)?;
-
-    info!("Posting attachment to {}", endpoint_url);
-
-    // 5. Build and send the POST request
+    // Create the endpoint URL using XeroEndpoint
+    let endpoint = XeroEndpoint::Custom(vec![
+        "Invoices".to_string(), 
+        invoice_id.to_string(), 
+        "Attachments".to_string(), 
+        attachment_filename.clone()
+    ]);
+    
+    // Make the request
+    let url = endpoint.to_url()?;
     let response = client
-        .build_request(Method::POST, endpoint_url)
+        .build_request(Method::POST, url)
         .header(reqwest::header::CONTENT_TYPE, content_type)
         .header(reqwest::header::CONTENT_LENGTH, attachment_content.len())
         .body(attachment_content.to_vec())
         .send()
-        .await
-        .map_err(Error::Request)?;
+        .await?;
 
-    // Optional: Handle and log the response
-    if response.status().is_success() {
-        info!("Attachment uploaded successfully.");
-    } else {
-        info!("Failed to upload attachment. Status: {}", response.status());
-    }
-
-    Ok(response.json::<Value>().await.unwrap())
+    // Parse and return the response
+    Ok(response.json().await?)
 }

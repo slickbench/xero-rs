@@ -52,8 +52,8 @@ pub struct Quote {
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "PascalCase")]
-struct ListResponse {
-    quotes: Vec<Quote>,
+pub(crate) struct ListResponse {
+    pub quotes: Vec<Quote>,
 }
 
 impl From<ListResponse> for Vec<Quote> {

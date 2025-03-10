@@ -1,17 +1,34 @@
 use core::fmt;
 use std::borrow::Cow;
+use std::str::FromStr;
 
 use oauth2::{
     AccessToken, AuthorizationCode, CsrfToken, HttpClientError, RefreshToken, TokenResponse,
 };
 use reqwest::{header, IntoUrl, Method, RequestBuilder, StatusCode};
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use url::Url;
 use uuid::Uuid;
 
 use crate::error::{self, Error, Result};
 use crate::oauth::{KeyPair, OAuthClient};
 use crate::scope::Scope;
+use crate::endpoints::XeroEndpoint;
+use crate::entities::{
+    contact::{self, Contact},
+    invoice::{self, Invoice},
+    purchase_order::{self, PurchaseOrder},
+    quote::{self, Quote},
+    timesheet::{CreateTimesheet, Timesheet},
+    MutationResponse,
+};
+use crate::payroll::{
+    employee::{self, Employee},
+    settings::{
+        earnings_rates::{self, EarningsRate},
+        pay_calendar::{self, PayCalendar},
+    },
+};
 
 const XERO_AUTH_URL: &str = "https://login.xero.com/identity/connect/authorize";
 const XERO_TOKEN_URL: &str = "https://identity.xero.com/connect/token";
@@ -196,6 +213,28 @@ impl Client {
         .await
     }
 
+    /// Perform a `GET` request against the API using a typed XeroEndpoint.
+    #[instrument(skip(self, query))]
+    pub async fn get_endpoint<
+        'a,
+        R: DeserializeOwned,
+        T: Serialize + Sized + fmt::Debug,
+    >(
+        &self,
+        endpoint: XeroEndpoint,
+        query: T,
+    ) -> Result<R> {
+        trace!(?query, endpoint = ?endpoint, "making GET request with endpoint");
+        let url = endpoint.to_url()?;
+        Self::handle_response(
+            self.build_request(Method::GET, url)
+                .query(&query)
+                .send()
+                .await?,
+        )
+        .await
+    }
+
     /// Perform an authenticated `PUT` request against the API. This method can only create new objects.
     #[instrument(skip(self, data))]
     pub async fn put<'a, R: DeserializeOwned, U: IntoUrl + fmt::Debug, T: Serialize + Sized>(
@@ -249,6 +288,55 @@ impl Client {
             } else {
                 Err(Error::API(response.json().await?))
             }
+        }
+    }
+
+    /// Perform a `POST` request against the API using a typed XeroEndpoint.
+    #[instrument(skip(self, data))]
+    pub async fn post_endpoint<'a, R: DeserializeOwned, T: Serialize + Sized + fmt::Debug>(
+        &self,
+        endpoint: XeroEndpoint,
+        data: &T,
+    ) -> Result<R> {
+        trace!(?data, endpoint = ?endpoint, "making POST request with endpoint");
+        let url = endpoint.to_url()?;
+        Self::handle_response(
+            self.build_request(Method::POST, url)
+                .json(data)
+                .send()
+                .await?,
+        )
+        .await
+    }
+
+    /// Perform a `PUT` request against the API using a typed XeroEndpoint.
+    #[instrument(skip(self, data))]
+    pub async fn put_endpoint<'a, R: DeserializeOwned, T: Serialize + Sized>(
+        &self,
+        endpoint: XeroEndpoint,
+        data: &T,
+    ) -> Result<R> {
+        trace!(endpoint = ?endpoint, "making PUT request with endpoint");
+        let url = endpoint.to_url()?;
+        Self::handle_response(
+            self.build_request(Method::PUT, url)
+                .json(data)
+                .send()
+                .await?,
+        )
+        .await
+    }
+
+    /// Perform a `DELETE` request against the API using a typed XeroEndpoint.
+    #[instrument(skip(self))]
+    pub async fn delete_endpoint(&self, endpoint: XeroEndpoint) -> Result<()> {
+        trace!(endpoint = ?endpoint, "making DELETE request with endpoint");
+        let url = endpoint.to_url()?;
+        let response = self.build_request(Method::DELETE, url).send().await?;
+        if response.status() == StatusCode::NO_CONTENT {
+            Ok(())
+        } else {
+            Self::handle_response::<()>(response).await
         }
     }
 
@@ -307,5 +395,329 @@ impl Client {
                 }
             },
         }
+    }
+
+    /// Access the contacts API
+    #[must_use]
+    pub fn contacts(&self) -> ContactsApi {
+        ContactsApi { client: self }
+    }
+
+    /// Access the invoices API
+    #[must_use]
+    pub fn invoices(&self) -> InvoicesApi {
+        InvoicesApi { client: self }
+    }
+
+    /// Access the purchase orders API
+    #[must_use]
+    pub fn purchase_orders(&self) -> PurchaseOrdersApi {
+        PurchaseOrdersApi { client: self }
+    }
+
+    /// Access the quotes API
+    #[must_use]
+    pub fn quotes(&self) -> QuotesApi {
+        QuotesApi { client: self }
+    }
+
+    /// Access the timesheets API
+    #[must_use]
+    pub fn timesheets(&self) -> TimesheetsApi {
+        TimesheetsApi { client: self }
+    }
+    
+    /// Access the employees API
+    #[must_use]
+    pub fn employees(&self) -> EmployeesApi {
+        EmployeesApi { client: self }
+    }
+    
+    /// Access the earnings rates API
+    #[must_use]
+    pub fn earnings_rates(&self) -> EarningsRatesApi {
+        EarningsRatesApi { client: self }
+    }
+    
+    /// Access the pay calendars API
+    #[must_use]
+    pub fn pay_calendars(&self) -> PayCalendarsApi {
+        PayCalendarsApi { client: self }
+    }
+}
+
+/// API handler for Contacts endpoints
+#[derive(Debug)]
+pub struct ContactsApi<'a> {
+    client: &'a Client,
+}
+
+impl<'a> ContactsApi<'a> {
+    /// Retrieve a list of contacts
+    #[instrument(skip(self))]
+    pub async fn list(&self) -> Result<Vec<Contact>> {
+        let response: contact::ListResponse = self.client.get_endpoint(XeroEndpoint::Contacts, Vec::<String>::default()).await?;
+        Ok(response.contacts)
+    }
+
+    /// Retrieve a single contact by ID
+    #[instrument(skip(self))]
+    pub async fn get(&self, contact_id: Uuid) -> Result<Contact> {
+        let endpoint = XeroEndpoint::Contact(contact_id);
+        let response: contact::ListResponse = self.client.get_endpoint(endpoint.clone(), Vec::<String>::default()).await?;
+        response.contacts.into_iter().next().ok_or(Error::NotFound {
+            entity: "Contact".to_string(),
+            url: endpoint.to_string(),
+            status_code: reqwest::StatusCode::NOT_FOUND,
+            response_body: Some(format!("Contact with ID {contact_id} not found")),
+        })
+    }
+}
+
+/// API handler for Invoices endpoints
+#[derive(Debug)]
+pub struct InvoicesApi<'a> {
+    client: &'a Client,
+}
+
+impl<'a> InvoicesApi<'a> {
+    /// List invoices with optional parameters
+    #[instrument(skip(self))]
+    pub async fn list(&self, parameters: invoice::ListParameters) -> Result<Vec<Invoice>> {
+        let response: invoice::ListResponse = self.client.get_endpoint(XeroEndpoint::Invoices, parameters).await?;
+        Ok(response.invoices)
+    }
+
+    /// List all invoices without any filtering
+    #[instrument(skip(self))]
+    pub async fn list_all(&self) -> Result<Vec<Invoice>> {
+        self.list(invoice::ListParameters::default()).await
+    }
+
+    /// Get a single invoice by ID
+    #[instrument(skip(self))]
+    pub async fn get(&self, invoice_id: Uuid) -> Result<Invoice> {
+        let endpoint = XeroEndpoint::Invoice(invoice_id);
+        let response: invoice::ListResponse = self.client.get_endpoint(endpoint.clone(), ()).await?;
+        response.invoices.into_iter().next().ok_or(Error::NotFound {
+            entity: "Invoice".to_string(),
+            url: endpoint.to_string(),
+            status_code: reqwest::StatusCode::NOT_FOUND,
+            response_body: Some(format!("Invoice with ID {invoice_id} not found")),
+        })
+    }
+
+    /// Create a new invoice
+    #[instrument(skip(self, invoice))]
+    pub async fn create(&self, invoice: &invoice::Builder) -> Result<Invoice> {
+        // Create a request wrapper
+        #[derive(Serialize, Debug)]
+        #[serde(rename_all = "PascalCase")]
+        struct InvoiceWrapper<'a> {
+            invoices: Vec<&'a invoice::Builder>,
+        }
+        
+        let request = InvoiceWrapper {
+            invoices: vec![invoice],
+        };
+
+        let response: MutationResponse = self.client
+            .put_endpoint(XeroEndpoint::Invoices, &request)
+            .await?;
+
+        // Extract invoice from response
+        response
+            .data
+            .get_invoices()
+            .and_then(|invoices| invoices.into_iter().next())
+            .ok_or(Error::NotFound {
+                entity: "Invoice".to_string(),
+                url: XeroEndpoint::Invoices.to_string(),
+                status_code: reqwest::StatusCode::NOT_FOUND,
+                response_body: Some("No invoice returned in response".to_string()),
+            })
+    }
+}
+
+/// API handler for Purchase Orders endpoints
+#[derive(Debug)]
+pub struct PurchaseOrdersApi<'a> {
+    client: &'a Client,
+}
+
+impl<'a> PurchaseOrdersApi<'a> {
+    /// Retrieve a list of purchase orders
+    #[instrument(skip(self))]
+    pub async fn list(&self) -> Result<Vec<PurchaseOrder>> {
+        let response: purchase_order::ListResponse = self.client.get(purchase_order::ENDPOINT, Vec::<String>::default()).await?;
+        Ok(response.purchase_orders)
+    }
+
+    /// Retrieve a single purchase order by ID
+    #[instrument(skip(self))]
+    pub async fn get(&self, purchase_order_id: Uuid) -> Result<PurchaseOrder> {
+        let endpoint = Url::from_str(purchase_order::ENDPOINT)
+            .and_then(|endpoint| endpoint.join(&purchase_order_id.to_string()))
+            .map_err(|_| Error::InvalidEndpoint)?;
+        let endpoint_str = endpoint.to_string();
+        let response: purchase_order::ListResponse = self.client.get(endpoint, Vec::<String>::default()).await?;
+        response
+            .purchase_orders
+            .into_iter()
+            .next()
+            .ok_or(Error::NotFound {
+                entity: "PurchaseOrder".to_string(),
+                url: endpoint_str,
+                status_code: reqwest::StatusCode::NOT_FOUND,
+                response_body: Some(format!(
+                    "Purchase Order with ID {purchase_order_id} not found"
+                )),
+            })
+    }
+
+    /// Create a new purchase order
+    #[instrument(skip(self, builder))]
+    pub async fn create(&self, builder: &purchase_order::Builder) -> Result<PurchaseOrder> {
+        let result: MutationResponse = self.client.put(purchase_order::ENDPOINT, builder).await?;
+        result
+            .data
+            .get_purchase_orders()
+            .and_then(|po| po.into_iter().next())
+            .ok_or(Error::NotFound {
+                entity: "PurchaseOrder".to_string(),
+                url: purchase_order::ENDPOINT.to_string(),
+                status_code: reqwest::StatusCode::NOT_FOUND,
+                response_body: Some(
+                    "Failed to create purchase order - no purchase order in response".to_string(),
+                ),
+            })
+    }
+}
+
+/// API handler for Quotes endpoints
+#[derive(Debug)]
+pub struct QuotesApi<'a> {
+    client: &'a Client,
+}
+
+impl<'a> QuotesApi<'a> {
+    /// Retrieve a list of quotes
+    #[instrument(skip(self))]
+    pub async fn list(&self) -> Result<Vec<Quote>> {
+        quote::list(self.client).await
+    }
+
+    /// Retrieve a single quote by ID
+    #[instrument(skip(self))]
+    pub async fn get(&self, quote_id: Uuid) -> Result<Quote> {
+        quote::get(self.client, quote_id).await
+    }
+}
+
+/// API handler for Timesheets endpoints
+#[derive(Debug)]
+pub struct TimesheetsApi<'a> {
+    client: &'a Client,
+}
+
+impl<'a> TimesheetsApi<'a> {
+    /// Retrieve a list of timesheets
+    #[instrument(skip(self))]
+    pub async fn list(&self) -> Result<Vec<Timesheet>> {
+        Timesheet::list(self.client).await
+    }
+
+    /// Retrieve a single timesheet by ID
+    #[instrument(skip(self))]
+    pub async fn get(&self, timesheet_id: Uuid) -> Result<Timesheet> {
+        Timesheet::get(self.client, timesheet_id).await
+    }
+
+    /// Create a new timesheet
+    #[instrument(skip(self, timesheet))]
+    pub async fn create(&self, timesheet: &CreateTimesheet) -> Result<Timesheet> {
+        Timesheet::create(self.client, timesheet).await
+    }
+    
+    /// Update a timesheet
+    #[instrument(skip(self, timesheet))]
+    pub async fn update(&self, timesheet: &Timesheet) -> Result<Timesheet> {
+        Timesheet::update(self.client, timesheet).await
+    }
+}
+
+/// API handler for Employees endpoints
+#[derive(Debug)]
+pub struct EmployeesApi<'a> {
+    client: &'a Client,
+}
+
+impl<'a> EmployeesApi<'a> {
+    /// Retrieve a list of employees
+    #[instrument(skip(self))]
+    pub async fn list(&self) -> Result<Vec<Employee>> {
+        let response: employee::ListResponse = self.client.get(employee::ENDPOINT, Vec::<String>::default()).await?;
+        Ok(response.employees)
+    }
+}
+
+/// API handler for Earnings Rates endpoints
+#[derive(Debug)]
+pub struct EarningsRatesApi<'a> {
+    client: &'a Client,
+}
+
+impl<'a> EarningsRatesApi<'a> {
+    /// Retrieve a list of earnings rates
+    #[instrument(skip(self))]
+    pub async fn list(&self) -> Result<Vec<EarningsRate>> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "PascalCase")]
+        struct PayItems {
+            earnings_rates: Vec<EarningsRate>,
+        }
+        
+        #[derive(Deserialize)]
+        #[serde(rename_all = "PascalCase")]
+        struct ListResponse {
+            pay_items: PayItems,
+        }
+        
+        let response: ListResponse = self.client.get(earnings_rates::ENDPOINT, Vec::<String>::default()).await?;
+        Ok(response.pay_items.earnings_rates)
+    }
+}
+
+/// API handler for Pay Calendars endpoints
+#[derive(Debug)]
+pub struct PayCalendarsApi<'a> {
+    client: &'a Client,
+}
+
+impl<'a> PayCalendarsApi<'a> {
+    /// Retrieve a list of pay calendars
+    #[instrument(skip(self))]
+    pub async fn list(&self) -> Result<Vec<PayCalendar>> {
+        let url = "https://api.xero.com/payroll.xro/1.0/PayrollCalendars";
+        let response: pay_calendar::PayCalendarResponse = self.client.get(url, &()).await?;
+        Ok(response.payroll_calendars)
+    }
+    
+    /// Get a pay calendar by ID
+    #[instrument(skip(self))]
+    pub async fn get(&self, pay_calendar_id: Uuid) -> Result<PayCalendar> {
+        let url = format!("https://api.xero.com/payroll.xro/1.0/PayrollCalendars/{pay_calendar_id}");
+        let response: pay_calendar::PayCalendarResponse = self.client.get(&url, &()).await?;
+        
+        if response.payroll_calendars.is_empty() {
+            return Err(Error::NotFound {
+                entity: "PayCalendar".to_string(),
+                url,
+                status_code: StatusCode::NOT_FOUND,
+                response_body: Some(format!("Pay Calendar with ID {pay_calendar_id} not found")),
+            });
+        }
+        
+        Ok(response.payroll_calendars.into_iter().next().unwrap())
     }
 }

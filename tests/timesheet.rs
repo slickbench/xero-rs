@@ -45,7 +45,7 @@ async fn test_timesheet_crud() -> miette::Result<()> {
 async fn run_test(client: &Client) -> miette::Result<()> {
     // First, get a valid employee ID
     info!("Fetching employees");
-    let employees = match employee::list(client).await {
+    let employees = match client.employees().list().await {
         Ok(employees) => {
             info!("Found {} employees", employees.len());
             employees
@@ -70,7 +70,7 @@ async fn run_test(client: &Client) -> miette::Result<()> {
         info!("Employee has payroll calendar ID: {}", payroll_calendar_id);
 
         // Fetch the pay calendar details
-        let pay_calendar = match pay_calendar::get(client, payroll_calendar_id).await {
+        let pay_calendar = match client.pay_calendars().get(payroll_calendar_id).await {
             Ok(calendar) => {
                 info!("Successfully retrieved pay calendar: {}", calendar.name);
                 info!(
@@ -96,7 +96,7 @@ async fn run_test(client: &Client) -> miette::Result<()> {
 
         // Then, get a valid earnings rate ID
         info!("Fetching earnings rates");
-        let earnings_rates = match earnings_rates::list(client).await {
+        let earnings_rates = match client.earnings_rates().list().await {
             Ok(rates) => {
                 info!("Found {} earnings rates", rates.len());
                 rates
@@ -252,26 +252,30 @@ async fn run_test(client: &Client) -> miette::Result<()> {
         let employee_timesheet = existing_timesheets.iter().find(|t| t.employee_id == employee.employee_id);
 
         if let Some(timesheet) = employee_timesheet {
-            // Update the existing timesheet
-            info!("Updating existing timesheet with ID: {}", timesheet.timesheet_id);
-            
-            // Clone the existing timesheet and update the fields we want to change
-            let mut updated_timesheet = timesheet.clone();
-            updated_timesheet.start_date = formatted_start_date;
-            updated_timesheet.end_date = formatted_end_date;
-            updated_timesheet.hours = total_hours;
-            updated_timesheet.status = TimesheetStatus::Draft;
-            
-            // Replace the timesheet lines
-            updated_timesheet.timesheet_lines = vec![timesheet_line];
-            
-            match Timesheet::update(client, &updated_timesheet).await {
-                Ok(updated) => {
-                    info!("Timesheet updated successfully: ID={}", updated.timesheet_id);
-                }
-                Err(e) => {
-                    error!("Failed to update timesheet: {:?}", e);
-                    return Err(miette::miette!("Failed to update timesheet: {:?}", e));
+            if timesheet.status == TimesheetStatus::Processed {
+                info!("Timesheet is already {:?}, skipping update", timesheet.status);
+            } else {
+                // Update the existing timesheet
+                info!("Updating existing timesheet with ID: {}", timesheet.timesheet_id);
+                
+                // Clone the existing timesheet and update the fields we want to change
+                let mut updated_timesheet = timesheet.clone();
+                updated_timesheet.start_date = formatted_start_date;
+                updated_timesheet.end_date = formatted_end_date;
+                updated_timesheet.hours = total_hours;
+                updated_timesheet.status = TimesheetStatus::Draft;
+                
+                // Replace the timesheet lines
+                updated_timesheet.timesheet_lines = vec![timesheet_line];
+                
+                match Timesheet::update(client, &updated_timesheet).await {
+                    Ok(updated) => {
+                        info!("Timesheet updated successfully: ID={}", updated.timesheet_id);
+                    }
+                    Err(e) => {
+                        error!("Failed to update timesheet: {:?}", e);
+                        return Err(miette::miette!("Failed to update timesheet: {:?}", e));
+                    }
                 }
             }
         } else {

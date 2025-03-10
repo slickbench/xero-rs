@@ -1,8 +1,6 @@
 use serde::Deserialize;
 use uuid::Uuid;
 
-use crate::{error::Result, Client};
-
 pub const ENDPOINT: &str = "https://api.xero.com/payroll.xro/1.0/PayItems";
 
 #[derive(Clone, Debug, Deserialize)]
@@ -32,19 +30,12 @@ pub struct EarningsRate {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct PayItems {
-    earnings_rates: Vec<EarningsRate>,
+pub struct PayItems {
+    pub earnings_rates: Vec<EarningsRate>,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct ListResponse {
-    pay_items: PayItems,
-}
-
-/// Retrieve a list of earnings rates.
-#[instrument(skip(client))]
-pub async fn list(client: &Client) -> Result<Vec<EarningsRate>> {
-    let response: ListResponse = client.get(ENDPOINT, Vec::<String>::default()).await?;
-    Ok(response.pay_items.earnings_rates)
+pub(crate) struct ListResponse {
+    pub pay_items: PayItems,
 }

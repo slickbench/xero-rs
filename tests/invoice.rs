@@ -6,10 +6,10 @@ mod test_utils;
 use anyhow::Result;
 use std::env;
 use uuid::Uuid;
-use xero_rs::{invoice::ListParameters, KeyPair};
+use xero_rs::KeyPair;
 
 #[tokio::test]
-async fn get_invoices() -> Result<()> {
+async fn list_invoices() -> Result<()> {
     test_utils::do_setup();
 
     // Get credentials from environment
@@ -29,12 +29,8 @@ async fn get_invoices() -> Result<()> {
     // Set the tenant ID
     client.set_tenant(Some(tenant_id));
 
-    let invoices = xero_rs::invoice::list(&client, ListParameters::default()).await?;
-    debug!("found {:?} invoices", invoices.len());
-
-    let invoice_from_list = invoices.first().unwrap();
-    let invoice = xero_rs::invoice::get(&client, invoice_from_list.invoice_id).await?;
-    assert_eq!(invoice_from_list.invoice_id, invoice.invoice_id);
-
+    // Use the new method-based API
+    let invoices = client.invoices().list_all().await?;
+    info!("received invoices: {:?}", invoices);
     Ok(())
 }

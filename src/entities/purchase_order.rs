@@ -1,16 +1,11 @@
-use std::str::FromStr;
-
 use chrono::NaiveDateTime;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use url::Url;
 use uuid::Uuid;
 
 use crate::{
     contact::Contact,
-    error::{Error, Result},
     line_item::{self, LineAmountType, LineItem},
-    Client, MutationResponse,
 };
 
 pub const ENDPOINT: &str = "https://api.xero.com/api.xro/2.0/PurchaseOrders/";
@@ -59,37 +54,8 @@ pub struct PurchaseOrder {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
-struct ListResponse {
-    purchase_orders: Vec<PurchaseOrder>,
-}
-
-/// Retrieve a list of purchase orders.
-#[instrument(skip(client))]
-pub async fn list(client: &Client) -> Result<Vec<PurchaseOrder>> {
-    let response: ListResponse = client.get(ENDPOINT, Vec::<String>::default()).await?;
-    Ok(response.purchase_orders)
-}
-
-/// Retrieve a single purchase order by it's `purchase_order_id`.
-#[instrument(skip(client))]
-pub async fn get(client: &Client, purchase_order_id: Uuid) -> Result<PurchaseOrder> {
-    let endpoint = Url::from_str(ENDPOINT)
-        .and_then(|endpoint| endpoint.join(&purchase_order_id.to_string()))
-        .map_err(|_| Error::InvalidEndpoint)?;
-    let endpoint_str = endpoint.to_string();
-    let response: ListResponse = client.get(endpoint, Vec::<String>::default()).await?;
-    response
-        .purchase_orders
-        .into_iter()
-        .next()
-        .ok_or(Error::NotFound {
-            entity: "PurchaseOrder".to_string(),
-            url: endpoint_str,
-            status_code: reqwest::StatusCode::NOT_FOUND,
-            response_body: Some(format!(
-                "Purchase Order with ID {purchase_order_id} not found"
-            )),
-        })
+pub(crate) struct ListResponse {
+    pub purchase_orders: Vec<PurchaseOrder>,
 }
 
 #[derive(Debug, Serialize)]
@@ -138,21 +104,4 @@ impl Builder {
             ..Builder::default()
         }
     }
-}
-
-#[instrument(skip(client))]
-pub async fn create(client: &Client, purchase_order: &Builder) -> Result<PurchaseOrder> {
-    let result: MutationResponse = client.put(ENDPOINT, purchase_order).await?;
-    result
-        .data
-        .get_purchase_orders()
-        .and_then(|po| po.into_iter().next())
-        .ok_or(Error::NotFound {
-            entity: "PurchaseOrder".to_string(),
-            url: ENDPOINT.to_string(),
-            status_code: reqwest::StatusCode::NOT_FOUND,
-            response_body: Some(
-                "Failed to create purchase order - no purchase order in response".to_string(),
-            ),
-        })
 }

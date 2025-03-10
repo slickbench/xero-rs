@@ -68,7 +68,7 @@ async fn main() -> Result<()> {
     let mut client = client;
     client.set_tenant(Some(tenant_id));
 
-    let invoices = xero_rs::invoice::list(&client, ListParameters::default()).await?;
+    let invoices = client.invoices().list(ListParameters::default()).await?;
     info!("Found {} invoices", invoices.len());
 
     Ok(())

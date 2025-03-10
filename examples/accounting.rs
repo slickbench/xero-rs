@@ -15,7 +15,7 @@ async fn main() -> Result<()> {
     let connections = xero_rs::connection::list(&client).await?;
     info!("found client connections: {:#?}", connections);
 
-    let invoices = xero_rs::invoice::list(&client, ListParameters::default()).await?;
+    let invoices = client.invoices().list(ListParameters::default()).await?;
     info!("found {} invoices", invoices.len());
 
     Ok(())

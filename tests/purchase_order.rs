@@ -36,12 +36,13 @@ async fn get_purchase_orders() -> Result<()> {
     // Set the tenant ID
     client.set_tenant(Some(tenant_id));
 
-    let purchase_orders = xero_rs::purchase_order::list(&client).await?;
+    // Use the new method-based API
+    let purchase_orders = client.purchase_orders().list().await?;
     debug!("found {:?} purchase_orders", purchase_orders.len());
 
     if !purchase_orders.is_empty() {
         let purchase_order_from_list = purchase_orders.first().unwrap();
-        let purchase_order = xero_rs::purchase_order::get(&client, purchase_order_from_list.purchase_order_id).await?;
+        let purchase_order = client.purchase_orders().get(purchase_order_from_list.purchase_order_id).await?;
         assert_eq!(purchase_order_from_list.purchase_order_id, purchase_order.purchase_order_id);
     }
 
@@ -70,8 +71,8 @@ async fn create_purchase_order() -> Result<()> {
     // Set the tenant ID
     client.set_tenant(Some(tenant_id));
 
-    let contact = xero_rs::contact::list(&client)
-        .await?
+    // Use the new method-based API
+    let contact = client.contacts().list().await?
         .into_iter()
         .next()
         .unwrap();
@@ -86,9 +87,9 @@ async fn create_purchase_order() -> Result<()> {
     )];
 
     let po_builder = purchase_order::Builder::new(ContactIdentifier::ID(contact.contact_id), line_items);
-    let created_po = purchase_order::create(&client, &po_builder).await?;
+    let created_po = client.purchase_orders().create(&po_builder).await?;
 
-    let po = xero_rs::purchase_order::get(&client, created_po.purchase_order_id).await?;
+    let po = client.purchase_orders().get(created_po.purchase_order_id).await?;
     assert_eq!(created_po.purchase_order_id, po.purchase_order_id);
 
     Ok(())

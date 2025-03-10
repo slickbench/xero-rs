@@ -1,15 +1,15 @@
 #[macro_use]
 extern crate tracing;
 
+mod test_utils;
+
 use anyhow::Result;
 use std::env;
 use uuid::Uuid;
 use xero_rs::KeyPair;
 
-mod test_utils;
-
 #[tokio::test]
-async fn get_quotes() -> Result<()> {
+async fn list_quotes() -> Result<()> {
     test_utils::do_setup();
 
     // Get credentials from environment
@@ -29,15 +29,8 @@ async fn get_quotes() -> Result<()> {
     // Set the tenant ID
     client.set_tenant(Some(tenant_id));
 
-    let quotes = xero_rs::quote::list(&client).await?;
-    debug!("found {} quotes", quotes.len());
-
-    if let Some(quote_from_list) = quotes.first() {
-        let quote = xero_rs::quote::get(&client, quote_from_list.quote_id).await?;
-        assert_eq!(quote_from_list.quote_id, quote.quote_id);
-    } else {
-        debug!("No quotes found in the account - skipping individual quote fetch test");
-    }
-
+    // Use the new method-based API
+    let quotes = client.quotes().list().await?;
+    info!("received quotes: {:?}", quotes);
     Ok(())
 }

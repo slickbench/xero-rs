@@ -29,7 +29,8 @@ async fn list_contacts() -> Result<()> {
     // Set the tenant ID
     client.set_tenant(Some(tenant_id));
 
-    let contacts = xero_rs::contact::list(&client).await?;
+    // Use the new method-based API
+    let contacts = client.contacts().list().await?;
     info!("received contacts: {:?}", contacts);
     Ok(())
 }

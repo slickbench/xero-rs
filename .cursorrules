@@ -1,0 +1,9 @@
+This is a Xero API client for the Rust language. 
+Check src/entities/mod.rs and src/lib.rs for a list of existing entities and public APIs.
+See https://developer.xero.com/documentation/api/accounting/overview for official Xero API reference.
+
+Always implement tests and include doc comments for new public APIs. Tests are stored in /tests/.
+
+Always run `cargo check` after a major refactor, and fix any errors or warnings that pop up.
+
+Use the `time` library for datetimes, `miette` for error handling, `reqwest` for API requests, and `oauth2` for authentication
