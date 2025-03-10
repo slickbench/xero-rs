@@ -450,7 +450,7 @@ pub struct ContactsApi<'a> {
     client: &'a Client,
 }
 
-impl<'a> ContactsApi<'a> {
+impl ContactsApi<'_> {
     /// Retrieve a list of contacts
     #[instrument(skip(self))]
     pub async fn list(&self) -> Result<Vec<Contact>> {
@@ -478,7 +478,7 @@ pub struct InvoicesApi<'a> {
     client: &'a Client,
 }
 
-impl<'a> InvoicesApi<'a> {
+impl InvoicesApi<'_> {
     /// List invoices with optional parameters
     #[instrument(skip(self))]
     pub async fn list(&self, parameters: invoice::ListParameters) -> Result<Vec<Invoice>> {
@@ -543,7 +543,7 @@ pub struct PurchaseOrdersApi<'a> {
     client: &'a Client,
 }
 
-impl<'a> PurchaseOrdersApi<'a> {
+impl PurchaseOrdersApi<'_> {
     /// Retrieve a list of purchase orders
     #[instrument(skip(self))]
     pub async fn list(&self) -> Result<Vec<PurchaseOrder>> {
@@ -598,7 +598,7 @@ pub struct QuotesApi<'a> {
     client: &'a Client,
 }
 
-impl<'a> QuotesApi<'a> {
+impl QuotesApi<'_> {
     /// Retrieve a list of quotes
     #[instrument(skip(self))]
     pub async fn list(&self) -> Result<Vec<Quote>> {
@@ -618,7 +618,7 @@ pub struct TimesheetsApi<'a> {
     client: &'a Client,
 }
 
-impl<'a> TimesheetsApi<'a> {
+impl TimesheetsApi<'_> {
     /// Retrieve a list of timesheets with optional filtering
     ///
     /// # Parameters
@@ -665,7 +665,7 @@ pub struct EmployeesApi<'a> {
     client: &'a Client,
 }
 
-impl<'a> EmployeesApi<'a> {
+impl EmployeesApi<'_> {
     /// Retrieve a list of employees
     #[instrument(skip(self))]
     pub async fn list(&self) -> Result<Vec<Employee>> {
@@ -680,7 +680,7 @@ pub struct EarningsRatesApi<'a> {
     client: &'a Client,
 }
 
-impl<'a> EarningsRatesApi<'a> {
+impl EarningsRatesApi<'_> {
     /// Retrieve a list of earnings rates
     #[instrument(skip(self))]
     pub async fn list(&self) -> Result<Vec<EarningsRate>> {
@@ -708,7 +708,7 @@ pub struct PayCalendarsApi<'a> {
     client: &'a Client,
 }
 
-impl<'a> PayCalendarsApi<'a> {
+impl PayCalendarsApi<'_> {
     /// Retrieve a list of pay calendars
     ///
     /// Returns all pay calendars defined in the Xero organization.

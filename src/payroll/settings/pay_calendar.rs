@@ -33,7 +33,7 @@ impl FromStr for CalendarType {
             "FOURWEEKLY" => Ok(CalendarType::FourWeekly),
             "TWICEMONTHLY" => Ok(CalendarType::TwiceMonthly),
             "QUARTERLY" => Ok(CalendarType::Quarterly),
-            _ => Err(format!("Unknown calendar type: {}", s)),
+            _ => Err(format!("Unknown calendar type: {s}")),
         }
     }
 }
@@ -68,7 +68,7 @@ pub struct PayCalendar {
 
 impl PayCalendar {
     /// Returns the end date of the pay period, which is the day before the payment date
-    pub fn end_date(&self) -> Date {
+    #[must_use] pub fn end_date(&self) -> Date {
         self.payment_date.saturating_sub(time::Duration::days(1))
     }
 }
@@ -116,7 +116,7 @@ mod calendar_type_string {
     where
         S: Serializer,
     {
-        serializer.serialize_str(&format!("{:?}", calendar_type).to_uppercase())
+        serializer.serialize_str(&format!("{calendar_type:?}").to_uppercase())
     }
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<CalendarType, D::Error>

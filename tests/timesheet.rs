@@ -1,6 +1,5 @@
-use time::{Date, Duration};
+use time::Duration;
 use tracing::{error, info};
-use uuid::Uuid;
 
 mod test_utils;
 
@@ -289,38 +288,6 @@ async fn run_test(client: &Client) -> miette::Result<()> {
     }
 
     Ok(())
-}
-
-// This function is no longer used but kept for reference
-fn generate_timesheet_lines(start_date: Date, end_date: Date, earnings_rate_id: Uuid) -> Vec<TimesheetLine> {
-    let mut lines = Vec::new();
-    let mut current_date = start_date;
-
-    // Add regular hours (8 hours) for weekdays
-    while current_date <= end_date {
-        let weekday = current_date.weekday();
-        let is_weekday = match weekday {
-            time::Weekday::Monday
-            | time::Weekday::Tuesday
-            | time::Weekday::Wednesday
-            | time::Weekday::Thursday
-            | time::Weekday::Friday => true,
-            _ => false,
-        };
-
-        if is_weekday {
-            lines.push(TimesheetLine {
-                earnings_rate_id: earnings_rate_id, // Use the provided earnings rate ID
-                number_of_units: vec![8.0],   // Single day with 8-hour workday
-                updated_date_utc: None,
-                tracking_item_id: None,
-            });
-        }
-
-        current_date = current_date.saturating_add(Duration::days(1));
-    }
-
-    lines
 }
 
 #[allow(dead_code)]

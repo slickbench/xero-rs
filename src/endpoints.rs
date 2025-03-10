@@ -37,15 +37,15 @@ impl XeroEndpoint {
         
         let path = match self {
             Self::Contacts => "Contacts",
-            Self::Contact(id) => return base.join(&format!("Contacts/{}", id)).map_err(|_| Error::InvalidEndpoint),
+            Self::Contact(id) => return base.join(&format!("Contacts/{id}")).map_err(|_| Error::InvalidEndpoint),
             Self::Invoices => "Invoices",
-            Self::Invoice(id) => return base.join(&format!("Invoices/{}", id)).map_err(|_| Error::InvalidEndpoint),
+            Self::Invoice(id) => return base.join(&format!("Invoices/{id}")).map_err(|_| Error::InvalidEndpoint),
             Self::PurchaseOrders => "PurchaseOrders",
-            Self::PurchaseOrder(id) => return base.join(&format!("PurchaseOrders/{}", id)).map_err(|_| Error::InvalidEndpoint),
+            Self::PurchaseOrder(id) => return base.join(&format!("PurchaseOrders/{id}")).map_err(|_| Error::InvalidEndpoint),
             Self::Quotes => "Quotes",
-            Self::Quote(id) => return base.join(&format!("Quotes/{}", id)).map_err(|_| Error::InvalidEndpoint),
+            Self::Quote(id) => return base.join(&format!("Quotes/{id}")).map_err(|_| Error::InvalidEndpoint),
             Self::Timesheets => "Timesheets",
-            Self::Timesheet(id) => return base.join(&format!("Timesheets/{}", id)).map_err(|_| Error::InvalidEndpoint),
+            Self::Timesheet(id) => return base.join(&format!("Timesheets/{id}")).map_err(|_| Error::InvalidEndpoint),
             Self::Custom(components) => return {
                 let path = components.join("/");
                 base.join(&path).map_err(|_| Error::InvalidEndpoint)
@@ -59,7 +59,7 @@ impl XeroEndpoint {
 impl fmt::Display for XeroEndpoint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.to_url() {
-            Ok(url) => write!(f, "{}", url),
+            Ok(url) => write!(f, "{url}"),
             Err(_) => write!(f, "Invalid endpoint"),
         }
     }

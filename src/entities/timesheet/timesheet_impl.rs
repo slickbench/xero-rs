@@ -171,7 +171,7 @@ impl Timesheet {
     /// # Parameters
     ///
     /// * `client` - The Xero client
-    /// * `parameters` - Optional filter parameters, including employee_id, status, date range, page, where, order
+    /// * `parameters` - Optional filter parameters, including `employee_id`, status, date range, page, where, order
     /// * `modified_after` - Optional ISO8601 timestamp to filter by modification date
     pub async fn list(
         client: &crate::client::Client, 

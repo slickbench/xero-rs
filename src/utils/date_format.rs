@@ -18,7 +18,7 @@ pub fn parse_dotnet_date(date_str: &str) -> Result<Date, String> {
             // Convert to seconds and create a Date
             let seconds = timestamp / 1000;
             let date = OffsetDateTime::from_unix_timestamp(seconds)
-                .map_err(|e| format!("Invalid timestamp: {}", e))?
+                .map_err(|e| format!("Invalid timestamp: {e}"))?
                 .date();
             return Ok(date);
         }
@@ -38,7 +38,7 @@ pub fn parse_dotnet_date(date_str: &str) -> Result<Date, String> {
     // Try as plain ISO format
     let format = format_description!("[year]-[month]-[day]");
     Date::parse(date_str, &format)
-        .map_err(|e| format!("Failed to parse date '{}': {}", date_str, e))
+        .map_err(|e| format!("Failed to parse date '{date_str}': {e}"))
 }
 
 // Function to handle Xero's .NET JSON datetime format (/Date(timestamp)/)
@@ -58,7 +58,7 @@ pub fn parse_dotnet_datetime(datetime_str: &str) -> Result<OffsetDateTime, Strin
             // Convert to seconds and create an OffsetDateTime
             let seconds = timestamp / 1000;
             let datetime = OffsetDateTime::from_unix_timestamp(seconds)
-                .map_err(|e| format!("Invalid timestamp: {}", e))?;
+                .map_err(|e| format!("Invalid timestamp: {e}"))?;
             return Ok(datetime);
         }
     }
@@ -91,12 +91,12 @@ pub fn parse_dotnet_datetime(datetime_str: &str) -> Result<OffsetDateTime, Strin
         }
     }
     
-    Err(format!("Failed to parse datetime '{}': no matching format", datetime_str))
+    Err(format!("Failed to parse datetime '{datetime_str}': no matching format"))
 }
 
 // Serialization module for time::Date
 pub mod xero_date_format {
-    use super::*;
+    use super::{Date, Deserialize, Deserializer, Serializer, format_description, parse_dotnet_date, serde};
 
     pub fn serialize<S>(date: &Date, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -122,7 +122,7 @@ pub mod xero_date_format {
 
 // Optional date serialization module
 pub mod xero_date_format_option {
-    use super::*;
+    use super::{Date, Deserialize, Deserializer, Serializer, format_description, serde};
     
     pub fn serialize<S>(date: &Option<Date>, serializer: S) -> Result<S::Ok, S::Error>
     where
