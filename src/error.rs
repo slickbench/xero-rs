@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 
+use miette::Diagnostic;
 use oauth2::HttpClientError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -93,21 +94,41 @@ pub struct TimesheetValidationError {
 }
 
 /// Errors that can occur when interacting with the Xero API.
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Diagnostic)]
 pub enum Error {
     #[error("error making request: {0:?}")]
-    Request(reqwest::Error),
+    #[diagnostic(
+        code(xero_rs::request_error),
+        help("Check your network connection and Xero API availability")
+    )]
+    Request(#[source] reqwest::Error),
 
     #[error("invalid filename")]
+    #[diagnostic(
+        code(xero_rs::invalid_filename),
+        help("Ensure the filename is valid and compatible with Xero API requirements")
+    )]
     InvalidFilename,
 
     #[error("attachment too large")]
+    #[diagnostic(
+        code(xero_rs::attachment_too_large),
+        help("Reduce the attachment size to comply with Xero API limits")
+    )]
     AttachmentTooLarge,
 
     #[error("error decoding response: {0:?}")]
-    DeserializationError(serde_json::Error, Option<String>),
+    #[diagnostic(
+        code(xero_rs::deserialization_error),
+        help("The API returned data in an unexpected format")
+    )]
+    DeserializationError(#[source] serde_json::Error, Option<String>),
 
     #[error("object not found: {entity} (url: {url})")]
+    #[diagnostic(
+        code(xero_rs::not_found),
+        help("Verify that the {entity} exists and that you have permission to access it")
+    )]
     NotFound {
         entity: String,
         url: String,
@@ -116,19 +137,35 @@ pub enum Error {
     },
 
     #[error("endpoint could not be parsed as a URL")]
+    #[diagnostic(
+        code(xero_rs::invalid_endpoint),
+        help("Check that the API endpoint URL is correctly formatted")
+    )]
     InvalidEndpoint,
 
     /// A standard error returned while interacting with the API such as a `ValidationException`.
     #[error("encountered validation exception: {0:#?}")]
+    #[diagnostic(
+        code(xero_rs::api_validation),
+        help("Review the validation errors returned by the Xero API")
+    )]
     API(Response),
 
     /// An error returned when the user is forbidden by something like an unsuccessful
     /// authentication.
     #[error("encountered forbidden response: {0:#?}")]
+    #[diagnostic(
+        code(xero_rs::forbidden),
+        help("Check your authentication credentials and permissions for the requested resource")
+    )]
     Forbidden(Box<ForbiddenResponse>),
 
     /// An error returned during `OAuth2` operations
     #[error("oauth2 error: {0:?}")]
+    #[diagnostic(
+        code(xero_rs::oauth2_error),
+        help("Verify your OAuth2 configuration and credentials")
+    )]
     OAuth2(oauth2::RequestTokenError<HttpClientError<reqwest::Error>, OAuth2ErrorResponse>),
 }
 
@@ -160,6 +197,10 @@ impl From<ForbiddenResponse> for Error {
     }
 }
 
+/// Type alias for results from this crate.
+/// 
+/// This is already a Miette diagnostic result due to the implementation of
+/// the Diagnostic trait for the Error type.
 pub type Result<O> = std::result::Result<O, Error>;
 
 /// Macro to handle common error mapping patterns
