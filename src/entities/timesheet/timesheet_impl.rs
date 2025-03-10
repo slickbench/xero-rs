@@ -43,7 +43,9 @@ pub struct ListParameters {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
-pub struct CreateTimesheet {
+pub struct PostTimesheet {
+    #[serde(rename = "TimesheetID", skip_serializing_if = "Option::is_none")]
+    pub timesheet_id: Option<Uuid>,
     #[serde(rename = "EmployeeID")]
     pub employee_id: Uuid,
     #[serde(with = "xero_date_format")]
@@ -90,9 +92,9 @@ impl Timesheet {
     /// # Panics
     /// 
     /// This function will panic if the response contains timesheets but the first element cannot be accessed.
-    pub async fn create(
+    pub async fn post(
         client: &crate::client::Client,
-        timesheet: &CreateTimesheet,
+        timesheet: &PostTimesheet,
     ) -> Result<Timesheet> {
         info!("Creating timesheet");
         debug!("Timesheet data: {:?}", timesheet);

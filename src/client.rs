@@ -19,7 +19,7 @@ use crate::entities::{
     invoice::{self, Invoice},
     purchase_order::{self, PurchaseOrder},
     quote::{self, Quote},
-    timesheet::{self, CreateTimesheet, Timesheet},
+    timesheet::{self, PostTimesheet, Timesheet},
     MutationResponse,
 };
 use crate::payroll::{
@@ -360,7 +360,7 @@ impl Client {
         );
 
         let text = response.text().await?;
-        tracing::info!("Response body: {}", text);
+        tracing::trace!("Response body: {}", text);
 
         let handle_deserialize_error = {
             let text = text.clone();
@@ -648,8 +648,8 @@ impl<'a> TimesheetsApi<'a> {
 
     /// Create a new timesheet
     #[instrument(skip(self, timesheet))]
-    pub async fn create(&self, timesheet: &CreateTimesheet) -> Result<Timesheet> {
-        Timesheet::create(self.client, timesheet).await
+    pub async fn create(&self, timesheet: &PostTimesheet) -> Result<Timesheet> {
+        Timesheet::post(self.client, timesheet).await
     }
     
     /// Update a timesheet

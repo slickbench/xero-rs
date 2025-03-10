@@ -6,7 +6,7 @@ mod test_utils;
 
 use xero_rs::{
     client::Client,
-    entities::timesheet::{self, CreateTimesheet, TimesheetLine, TimesheetStatus},
+    entities::timesheet::{self, PostTimesheet, TimesheetLine, TimesheetStatus},
 };
 
 #[tokio::test]
@@ -233,7 +233,8 @@ async fn run_test(client: &Client) -> miette::Result<()> {
         ];
 
         // Create a new timesheet for the employee
-        let timesheet = CreateTimesheet {
+        let timesheet = PostTimesheet {
+            timesheet_id: None,
             employee_id: employee.employee_id,
             start_date,
             end_date,
