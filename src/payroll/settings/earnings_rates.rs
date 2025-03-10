@@ -37,5 +37,6 @@ pub struct PayItems {
 #[derive(Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub(crate) struct ListResponse {
+    #[allow(dead_code)]
     pub pay_items: PayItems,
 }
