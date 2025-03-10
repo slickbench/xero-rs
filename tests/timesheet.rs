@@ -1,13 +1,12 @@
-use chrono::{Datelike, NaiveDate, NaiveDateTime};
-use tracing::{debug, error, info};
-use time::Date as TimeDate;
+use time::{Date, Duration};
+use tracing::{error, info};
+use uuid::Uuid;
 
 mod test_utils;
 
 use xero_rs::{
     client::Client,
-    entities::timesheet::{CreateTimesheet, Timesheet, TimesheetLine, TimesheetStatus},
-    payroll::settings::pay_calendar::CalendarType,
+    entities::timesheet::{self, CreateTimesheet, TimesheetLine, TimesheetStatus},
 };
 
 #[tokio::test]
@@ -63,246 +62,264 @@ async fn run_test(client: &Client) -> miette::Result<()> {
     let employee = &employees[0];
     info!("Using employee: ID={}", employee.employee_id);
 
-    // Get the employee's pay calendar ID
-    if let Some(payroll_calendar_id) = employee.payroll_calendar_id {
-        info!("Employee has payroll calendar ID: {}", payroll_calendar_id);
-
-        // Fetch the pay calendar details
-        let pay_calendar = match client.pay_calendars().get(payroll_calendar_id).await {
-            Ok(calendar) => {
-                info!("Successfully retrieved pay calendar: {}", calendar.name);
-                info!(
-                    "Pay calendar period: {} to payment date {}",
-                    calendar.start_date, calendar.payment_date
-                );
-                calendar
-            }
-            Err(e) => {
-                error!("Failed to fetch pay calendar: {:?}", e);
-                return Err(miette::miette!("Failed to fetch pay calendar: {:?}", e));
-            }
-        };
-
-        // Use the dates from the pay calendar for our timesheet
-        let start_date = pay_calendar.start_date;
-        let end_date = pay_calendar.payment_date;
-
-        info!(
-            "Using timesheet period from pay calendar: {} to {}",
-            start_date, end_date
-        );
-
-        // Helper function to convert time::Date to chrono::NaiveDate
-        fn time_date_to_chrono(date: TimeDate) -> NaiveDate {
-            NaiveDate::from_ymd_opt(
-                date.year(),
-                date.month() as u32,
-                date.day() as u32,
-            ).unwrap()
+    // Fetch earnings rates
+    info!("Fetching earnings rates");
+    let earnings_rates = match client.earnings_rates().list().await {
+        Ok(rates) => {
+            info!("Found {} earnings rates", rates.len());
+            rates
         }
-
-        // Convert the dates to chrono::NaiveDate for the rest of the code
-        let start = time_date_to_chrono(start_date);
-                
-        // Calculate end date based on calendar type
-        // For a FORTNIGHTLY calendar, add 13 days (2 weeks - 1 day) to the start date
-        let end = match pay_calendar.calendar_type {
-            CalendarType::Fortnightly => start + chrono::Duration::days(13),
-            CalendarType::Weekly => start + chrono::Duration::days(6),
-            CalendarType::Monthly => {
-                // For a monthly calendar, go to the end of the month
-                let (year, month, _) = (start.year(), start.month(), start.day());
-                let days_in_month = if month == 12 {
-                    NaiveDate::from_ymd_opt(year + 1, 1, 1).unwrap()
-                } else {
-                    NaiveDate::from_ymd_opt(year, month + 1, 1).unwrap()
-                };
-                days_in_month.pred_opt().unwrap() // Last day of the month
-            }
-            CalendarType::TwiceMonthly => {
-                // For twice-monthly, if we're in the first half, go to the 15th,
-                // if we're in the second half, go to the end of the month
-                let day = start.day();
-                if day <= 15 {
-                    NaiveDate::from_ymd_opt(start.year(), start.month(), 15).unwrap()
-                } else {
-                    // Go to the end of the month (same as Monthly)
-                    let (year, month, _) = (start.year(), start.month(), start.day());
-                    let days_in_month = if month == 12 {
-                        NaiveDate::from_ymd_opt(year + 1, 1, 1).unwrap()
-                    } else {
-                        NaiveDate::from_ymd_opt(year, month + 1, 1).unwrap()
-                    };
-                    days_in_month.pred_opt().unwrap() // Last day of the month
-                }
-            }
-            _ => {
-                // Default to 6 days after start (one week minus one day)
-                start + chrono::Duration::days(6)
-            },
-        };
-
-        // Format dates for API
-        let formatted_start_date = start.format("%Y-%m-%d").to_string();
-        let formatted_end_date = end.format("%Y-%m-%d").to_string();
-        
-        info!(
-            "Using timesheet period: {} to {}",
-            formatted_start_date, formatted_end_date
-        );
-
-        // Calculate the number of days in the period
-        let days_in_period = (end - start).num_days() + 1;
-
-        // Create number_of_units array with 8 hours for weekdays, 0 for weekends
-        let mut number_of_units = Vec::new();
-        let mut total_hours = 0.0;
-
-        for day_offset in 0..days_in_period {
-            let date = start + chrono::Duration::days(day_offset);
-            let is_weekday = matches!(
-                date.weekday(),
-                chrono::Weekday::Mon
-                | chrono::Weekday::Tue
-                | chrono::Weekday::Wed
-                | chrono::Weekday::Thu
-                | chrono::Weekday::Fri
-            );
-
-            // Assign 8 hours for weekdays, 0 for weekends
-            let hours = if is_weekday { 8.0 } else { 0.0 };
-            number_of_units.push(hours);
-            total_hours += hours;
+        Err(e) => {
+            error!("Failed to fetch earnings rates: {:?}", e);
+            return Err(miette::miette!("Failed to fetch earnings rates: {:?}", e));
         }
+    };
 
-        // Then, get a valid earnings rate ID
-        info!("Fetching earnings rates");
-        let earnings_rates = match client.earnings_rates().list().await {
-            Ok(rates) => {
-                info!("Found {} earnings rates", rates.len());
-                rates
-            }
-            Err(e) => {
-                error!("Failed to fetch earnings rates: {:?}", e);
-                return Err(miette::miette!("Failed to fetch earnings rates: {:?}", e));
-            }
-        };
-
-        if earnings_rates.is_empty() {
-            error!("No earnings rates found in the Xero account");
-            return Err(miette::miette!(
-                "No earnings rates found in the Xero account"
-            ));
-        }
-
-        let earnings_rate = &earnings_rates[0];
-        info!(
-            "Using earnings rate: ID={}, Name={}",
-            earnings_rate.earnings_rate_id, earnings_rate.name
-        );
-
-        // Create a test timesheet
-        let timesheet_line = TimesheetLine {
-            timesheet_line_id: Some(uuid::Uuid::new_v4()),
-            date: Some(formatted_start_date.clone()),
-            earnings_rate_id: earnings_rate.earnings_rate_id,
-            number_of_units,
-            updated_date_utc: None,
-        };
-
-        // Try to find an existing timesheet for this employee
-        info!("Checking for existing timesheets...");
-        let existing_timesheets = match Timesheet::list(client).await {
-            Ok(timesheets) => {
-                info!("Found {} existing timesheets", timesheets.len());
-                timesheets
-            }
-            Err(e) => {
-                error!("Error listing timesheets: {:?}", e);
-                return Err(miette::miette!("Error listing timesheets: {:?}", e));
-            }
-        };
-
-        // Check if there's a timesheet for our employee
-        let employee_timesheet = existing_timesheets.iter().find(|t| t.employee_id == employee.employee_id);
-
-        if let Some(timesheet) = employee_timesheet {
-            if timesheet.status == TimesheetStatus::Processed {
-                info!("Timesheet is already {:?}, skipping update", timesheet.status);
-            } else {
-                // Update the existing timesheet
-                info!("Updating existing timesheet with ID: {}", timesheet.timesheet_id);
-                
-                // Clone the existing timesheet and update the fields we want to change
-                let mut updated_timesheet = timesheet.clone();
-                updated_timesheet.start_date = formatted_start_date;
-                updated_timesheet.end_date = formatted_end_date;
-                updated_timesheet.hours = total_hours;
-                updated_timesheet.status = TimesheetStatus::Draft;
-                
-                // Replace the timesheet lines
-                updated_timesheet.timesheet_lines = vec![timesheet_line];
-                
-                match Timesheet::update(client, &updated_timesheet).await {
-                    Ok(updated) => {
-                        info!("Timesheet updated successfully: ID={}", updated.timesheet_id);
-                    }
-                    Err(e) => {
-                        error!("Failed to update timesheet: {:?}", e);
-                        return Err(miette::miette!("Failed to update timesheet: {:?}", e));
-                    }
-                }
-            }
-        } else {
-            // Create a new timesheet
-            info!("No existing timesheet found, creating a new one...");
-            
-            let create_timesheet = CreateTimesheet {
-                employee_id: employee.employee_id,
-                start_date: formatted_start_date,
-                end_date: formatted_end_date,
-                status: TimesheetStatus::Draft,
-                hours: total_hours,
-                timesheet_lines: vec![timesheet_line],
-            };
-
-            debug!("Timesheet to create: {:?}", create_timesheet);
-
-            // Create the timesheet
-            info!("Creating timesheet...");
-            match Timesheet::create(client, &create_timesheet).await {
-                Ok(timesheet) => {
-                    info!("Timesheet created: ID={}", timesheet.timesheet_id);
-
-                    // Mark the timesheet as processed instead of deleting it
-                    info!("Marking timesheet as processed...");
-                    let mut processed_timesheet = timesheet.clone();
-                    processed_timesheet.status = TimesheetStatus::Processed;
-                    
-                    match Timesheet::update(client, &processed_timesheet).await {
-                        Ok(processed) => {
-                            info!("Timesheet marked as processed successfully: ID={}", processed.timesheet_id);
-                        }
-                        Err(e) => {
-                            error!("Failed to mark timesheet as processed: {:?}", e);
-                            return Err(miette::miette!("Failed to mark timesheet as processed: {:?}", e));
-                        }
-                    }
-                }
-                Err(e) => {
-                    error!("Failed to create timesheet: {:?}", e);
-                    return Err(miette::miette!("Failed to create timesheet: {:?}", e));
-                }
-            }
-        }
-
-        Ok(())
-    } else {
-        error!("Employee does not have a payroll calendar ID");
-        Err(miette::miette!(
-            "Employee does not have a payroll calendar ID"
-        ))
+    if earnings_rates.is_empty() {
+        error!("No earnings rates found in the Xero account");
+        return Err(miette::miette!("No earnings rates found in the Xero account"));
     }
+
+    // Use the first earnings rate
+    let earnings_rate = &earnings_rates[0];
+    info!("Using earnings rate: ID={}, Name={}", earnings_rate.earnings_rate_id, earnings_rate.name);
+
+    // Fetch pay calendars to get a valid pay period
+    info!("Fetching pay calendars");
+    let pay_calendars = match client.pay_calendars().list().await {
+        Ok(calendars) => {
+            info!("Found {} pay calendars", calendars.len());
+            calendars
+        }
+        Err(e) => {
+            error!("Failed to fetch pay calendars: {:?}", e);
+            return Err(miette::miette!("Failed to fetch pay calendars: {:?}", e));
+        }
+    };
+
+    if pay_calendars.is_empty() {
+        error!("No pay calendars found in the Xero account");
+        return Err(miette::miette!("No pay calendars found in the Xero account"));
+    }
+
+    // Use the first pay calendar
+    let pay_calendar = &pay_calendars[0];
+    info!(
+        "Using pay calendar: ID={}, Type={:?}, StartDate={}, PaymentDate={}",
+        pay_calendar.pay_calendar_id,
+        pay_calendar.calendar_type,
+        pay_calendar.start_date,
+        pay_calendar.payment_date
+    );
+
+    // Get the start and end dates from the pay calendar
+    let start_date = pay_calendar.start_date;
+    let end_date = pay_calendar.end_date();
+    
+    info!(
+        "Using pay period: Start={}, End={}",
+        start_date, end_date
+    );
+
+    // First, check if a timesheet already exists for this employee and pay period
+    info!("Checking for existing timesheets for employee and period");
+    let mut list_params = timesheet::ListParameters::default();
+    list_params.employee_id = Some(employee.employee_id);
+    list_params.start_date = Some(start_date);
+    list_params.end_date = Some(end_date);
+    
+    let existing_timesheets = match client.timesheets().list(Some(list_params), None).await {
+        Ok(timesheets) => {
+            info!("Found {} matching timesheets", timesheets.len());
+            timesheets
+        }
+        Err(e) => {
+            error!("Failed to fetch existing timesheets: {:?}", e);
+            return Err(miette::miette!("Failed to fetch existing timesheets: {:?}", e));
+        }
+    };
+
+    // Look for a matching timesheet (we've already filtered by employee ID and date range in the API)
+    let matching_timesheet = existing_timesheets.first();
+
+    let created = if let Some(existing) = matching_timesheet {
+        info!("Found existing timesheet (ID: {}) for this employee and pay period", existing.timesheet_id);
+        
+        // Create updated version of the existing timesheet
+        let mut updated = existing.clone();
+        
+        // Create a single timesheet line - adjust number_of_units based on period length
+        let days_in_period = (end_date - start_date).whole_days() + 1;
+        let mut units = Vec::with_capacity(days_in_period as usize);
+        
+        // Fill with 8 hours for each working day in the period
+        for i in 0..days_in_period {
+            let current_date = start_date.saturating_add(Duration::days(i));
+            let weekday = current_date.weekday();
+            
+            // Only allocate hours for weekdays
+            let hours = match weekday {
+                time::Weekday::Monday |
+                time::Weekday::Tuesday |
+                time::Weekday::Wednesday |
+                time::Weekday::Thursday |
+                time::Weekday::Friday => 8.0,
+                _ => 0.0, // Weekend
+            };
+            
+            units.push(hours);
+        }
+        
+        // Update the timesheet line
+        if updated.timesheet_lines.is_empty() {
+            updated.timesheet_lines = vec![
+                TimesheetLine {
+                    earnings_rate_id: earnings_rate.earnings_rate_id,
+                    number_of_units: units,
+                    updated_date_utc: None,
+                    tracking_item_id: None,
+                }
+            ];
+        } else {
+            updated.timesheet_lines[0].earnings_rate_id = earnings_rate.earnings_rate_id;
+            updated.timesheet_lines[0].number_of_units = units;
+        }
+        
+        // Update the timesheet
+        info!("Updating existing timesheet");
+        match client.timesheets().update(&updated).await {
+            Ok(updated) => {
+                info!("Successfully updated timesheet with ID: {}", updated.timesheet_id);
+                updated
+            }
+            Err(e) => {
+                error!("Failed to update timesheet: {:?}", e);
+                return Err(miette::miette!("Failed to update timesheet: {:?}", e));
+            }
+        }
+    } else {
+        // No existing timesheet found, create a new one
+        info!("No existing timesheet found, creating new one");
+        
+        // Create a single timesheet line - adjust number_of_units based on period length
+        let days_in_period = (end_date - start_date).whole_days() + 1;
+        let mut units = Vec::with_capacity(days_in_period as usize);
+        
+        // Fill with 8 hours for each working day in the period
+        for i in 0..days_in_period {
+            let current_date = start_date.saturating_add(Duration::days(i));
+            let weekday = current_date.weekday();
+            
+            // Only allocate hours for weekdays
+            let hours = match weekday {
+                time::Weekday::Monday |
+                time::Weekday::Tuesday |
+                time::Weekday::Wednesday |
+                time::Weekday::Thursday |
+                time::Weekday::Friday => 8.0,
+                _ => 0.0, // Weekend
+            };
+            
+            units.push(hours);
+        }
+        
+        let timesheet_lines = vec![
+            TimesheetLine {
+                earnings_rate_id: earnings_rate.earnings_rate_id,
+                number_of_units: units,
+                updated_date_utc: None,
+                tracking_item_id: None,
+            }
+        ];
+
+        // Create a new timesheet for the employee
+        let timesheet = CreateTimesheet {
+            employee_id: employee.employee_id,
+            start_date,
+            end_date,
+            status: Some(TimesheetStatus::Draft),
+            timesheet_lines: Some(timesheet_lines),
+        };
+
+        // Submit the timesheet
+        info!("Creating timesheet for employee");
+        match client.timesheets().create(&timesheet).await {
+            Ok(created) => {
+                info!("Successfully created timesheet with ID: {}", created.timesheet_id);
+                created
+            }
+            Err(e) => {
+                error!("Failed to create timesheet: {:?}", e);
+                return Err(miette::miette!("Failed to create timesheet: {:?}", e));
+            }
+        }
+    };
+
+    // Get the timesheet by ID
+    info!("Fetching created timesheet");
+    let fetched = match client.timesheets().get(created.timesheet_id).await {
+        Ok(fetched) => {
+            info!("Successfully fetched timesheet");
+            fetched
+        }
+        Err(e) => {
+            error!("Failed to fetch timesheet: {:?}", e);
+            return Err(miette::miette!("Failed to fetch timesheet: {:?}", e));
+        }
+    };
+
+    // Verify the fetched timesheet
+    assert_eq!(fetched.timesheet_id, created.timesheet_id);
+    assert_eq!(fetched.employee_id, employee.employee_id);
+    
+    // Change status to Processed (since delete is not supported by the API)
+    info!("Updating timesheet status to Processed");
+    let mut updated_timesheet = fetched.clone();
+    updated_timesheet.status = TimesheetStatus::Processed;
+    
+    match client.timesheets().update(&updated_timesheet).await {
+        Ok(_) => {
+            info!("Successfully updated timesheet status to Processed");
+        }
+        Err(e) => {
+            error!("Failed to update timesheet: {:?}", e);
+            return Err(miette::miette!("Failed to update timesheet: {:?}", e));
+        }
+    }
+
+    Ok(())
+}
+
+// This function is no longer used but kept for reference
+fn generate_timesheet_lines(start_date: Date, end_date: Date, earnings_rate_id: Uuid) -> Vec<TimesheetLine> {
+    let mut lines = Vec::new();
+    let mut current_date = start_date;
+
+    // Add regular hours (8 hours) for weekdays
+    while current_date <= end_date {
+        let weekday = current_date.weekday();
+        let is_weekday = match weekday {
+            time::Weekday::Monday
+            | time::Weekday::Tuesday
+            | time::Weekday::Wednesday
+            | time::Weekday::Thursday
+            | time::Weekday::Friday => true,
+            _ => false,
+        };
+
+        if is_weekday {
+            lines.push(TimesheetLine {
+                earnings_rate_id: earnings_rate_id, // Use the provided earnings rate ID
+                number_of_units: vec![8.0],   // Single day with 8-hour workday
+                updated_date_utc: None,
+                tracking_item_id: None,
+            });
+        }
+
+        current_date = current_date.saturating_add(Duration::days(1));
+    }
+
+    lines
 }
 
 #[allow(dead_code)]

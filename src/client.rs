@@ -19,7 +19,7 @@ use crate::entities::{
     invoice::{self, Invoice},
     purchase_order::{self, PurchaseOrder},
     quote::{self, Quote},
-    timesheet::{CreateTimesheet, Timesheet},
+    timesheet::{self, CreateTimesheet, Timesheet},
     MutationResponse,
 };
 use crate::payroll::{
@@ -360,7 +360,7 @@ impl Client {
         );
 
         let text = response.text().await?;
-        tracing::debug!("Response body: {}", text);
+        tracing::info!("Response body: {}", text);
 
         let handle_deserialize_error = {
             let text = text.clone();
@@ -379,7 +379,6 @@ impl Client {
                     Ok(result) => Ok(result),
                     Err(e) => {
                         tracing::error!("Failed to deserialize response: {}", e);
-                        tracing::error!("Response body: {}", text);
                         Err(handle_deserialize_error(e))
                     }
                 },
@@ -388,7 +387,6 @@ impl Client {
                 )),
                 _ => {
                     tracing::error!("Unexpected status code: {}", status);
-                    tracing::error!("Response body: {}", text);
                     Err(Error::API(
                         serde_json::from_str(&text).map_err(handle_deserialize_error)?,
                     ))
@@ -621,10 +619,25 @@ pub struct TimesheetsApi<'a> {
 }
 
 impl<'a> TimesheetsApi<'a> {
-    /// Retrieve a list of timesheets
+    /// Retrieve a list of timesheets with optional filtering
+    ///
+    /// # Parameters
+    /// 
+    /// * `parameters` - Optional filter parameters
+    /// * `modified_after` - Optional ISO8601 timestamp (format: yyyy-mm-ddThh:mm:ss) to filter by modification date
+    #[instrument(skip(self, parameters, modified_after))]
+    pub async fn list(
+        &self, 
+        parameters: Option<timesheet::ListParameters>, 
+        modified_after: Option<String>
+    ) -> Result<Vec<Timesheet>> {
+        Timesheet::list(self.client, parameters.as_ref(), modified_after).await
+    }
+    
+    /// List all timesheets without any filtering
     #[instrument(skip(self))]
-    pub async fn list(&self) -> Result<Vec<Timesheet>> {
-        Timesheet::list(self.client).await
+    pub async fn list_all(&self) -> Result<Vec<Timesheet>> {
+        self.list(None::<timesheet::ListParameters>, None).await
     }
 
     /// Retrieve a single timesheet by ID

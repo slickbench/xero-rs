@@ -11,6 +11,7 @@ pub mod error;
 pub mod oauth;
 pub mod payroll;
 pub mod scope;
+pub mod utils;
 
 pub use error::Error;
 pub use client::Client;

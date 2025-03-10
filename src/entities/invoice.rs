@@ -1,6 +1,6 @@
 use std::{path::Path, ffi::OsStr};
 
-use chrono::NaiveDateTime;
+use time::{Date, OffsetDateTime};
 use reqwest::Method;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -14,6 +14,7 @@ use crate::{
     error::{Error, Result},
     line_item::{LineAmountType, LineItem},
     Client,
+    utils::date_format::{xero_date_format, xero_date_format_option, xero_datetime_format},
 };
 
 use super::{line_item};
@@ -49,10 +50,10 @@ pub enum Status {
 pub struct Invoice {
     pub r#type: Type,
     pub contact: Contact,
-    #[serde(rename = "DateString")]
-    pub date: NaiveDateTime,
-    #[serde(rename = "DueDateString", default)]
-    pub due_date: Option<NaiveDateTime>,
+    #[serde(rename = "DateString", with = "xero_date_format")]
+    pub date: Date,
+    #[serde(rename = "DueDateString", default, with = "xero_date_format_option")]
+    pub due_date: Option<Date>,
     pub status: Status,
     pub line_amount_types: LineAmountType,
     pub line_items: Vec<LineItem>,
@@ -60,8 +61,8 @@ pub struct Invoice {
     pub total_tax: Decimal,
     pub total: Decimal,
     pub total_discount: Option<Decimal>,
-    #[serde(rename = "UpdatedDateUTC")]
-    pub updated_date_utc: String,
+    #[serde(rename = "UpdatedDateUTC", with = "xero_datetime_format")]
+    pub updated_date_utc: OffsetDateTime,
     pub currency_code: String,
     pub currency_rate: Option<Decimal>,
     #[serde(rename = "InvoiceID")]
@@ -72,8 +73,10 @@ pub struct Invoice {
     pub branding_theme_id: Option<Uuid>,
     pub url: Option<Url>,
     pub sent_to_contact: Option<bool>,
-    pub expected_payment_date: Option<String>,
-    pub planned_payment_date: Option<String>,
+    #[serde(default, with = "xero_date_format_option")]
+    pub expected_payment_date: Option<Date>,
+    #[serde(default, with = "xero_date_format_option")]
+    pub planned_payment_date: Option<Date>,
     #[serde(default)]
     pub has_attachments: bool,
     #[serde(rename = "RepeatingInvoiceID")]
@@ -86,7 +89,8 @@ pub struct Invoice {
     pub amount_paid: Decimal,
     #[serde(rename = "CISDeduction")]
     pub cis_deduction: Option<String>,
-    pub fully_paid_on_date: Option<String>,
+    #[serde(default, with = "xero_date_format_option")]
+    pub fully_paid_on_date: Option<Date>,
     #[serde(default)]
     pub amount_credited: Option<Decimal>,
 }
@@ -116,15 +120,16 @@ impl Default for ContactIdentifier {
     }
 }
 
-#[derive(Default, Debug, Clone, Serialize)]
-#[serde(rename_all = "PascalCase")]
+#[derive(Default, Debug, Serialize)]
 pub struct Builder {
     #[serde(rename = "Type")]
     pub r#type: Type,
     pub contact: ContactIdentifier,
     pub line_items: Vec<line_item::Builder>,
-    pub date: Option<NaiveDateTime>,
-    pub due_date: Option<NaiveDateTime>,
+    #[serde(with = "xero_date_format_option", skip_serializing_if = "Option::is_none")]
+    pub date: Option<Date>,
+    #[serde(with = "xero_date_format_option", skip_serializing_if = "Option::is_none")]
+    pub due_date: Option<Date>,
     pub line_amount_types: Option<LineAmountType>,
     pub invoice_number: Option<String>,
     pub reference: Option<String>,
@@ -135,8 +140,10 @@ pub struct Builder {
     pub currency_rate: Option<Decimal>,
     pub status: Option<Status>,
     pub sent_to_contact: Option<bool>,
-    pub expected_payment_date: Option<NaiveDateTime>,
-    pub planned_payment_date: Option<NaiveDateTime>,
+    #[serde(with = "xero_date_format_option", skip_serializing_if = "Option::is_none")]
+    pub expected_payment_date: Option<Date>,
+    #[serde(with = "xero_date_format_option", skip_serializing_if = "Option::is_none")]
+    pub planned_payment_date: Option<Date>,
 }
 
 impl Builder {

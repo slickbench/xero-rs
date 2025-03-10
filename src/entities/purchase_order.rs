@@ -1,4 +1,4 @@
-use chrono::NaiveDateTime;
+use time::{Date, OffsetDateTime};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::{
     contact::Contact,
     line_item::{self, LineAmountType, LineItem},
+    utils::date_format::{xero_date_format, xero_date_format_option, xero_datetime_format},
 };
 
 pub const ENDPOINT: &str = "https://api.xero.com/api.xro/2.0/PurchaseOrders/";
@@ -24,8 +25,10 @@ pub enum Status {
 #[serde(rename_all = "PascalCase")]
 pub struct PurchaseOrder {
     pub contact: Contact,
-    pub date: String,
-    pub delivery_date: Option<String>,
+    #[serde(with = "xero_date_format")]
+    pub date: Date,
+    #[serde(default, with = "xero_date_format_option")]
+    pub delivery_date: Option<Date>,
     pub line_amount_types: LineAmountType,
     pub purchase_order_number: String,
     pub reference: Option<String>,
@@ -39,7 +42,8 @@ pub struct PurchaseOrder {
     pub attention_to: Option<String>,
     pub telephone: Option<String>,
     pub delivery_instructions: Option<String>,
-    pub expected_arrival_date: Option<String>,
+    #[serde(default, with = "xero_date_format_option")]
+    pub expected_arrival_date: Option<Date>,
     #[serde(rename = "PurchaseOrderID")]
     pub purchase_order_id: Uuid,
     pub currency_rate: Option<Decimal>,
@@ -48,8 +52,8 @@ pub struct PurchaseOrder {
     pub total: Decimal,
     pub total_discount: Option<Decimal>,
     pub has_attachments: Option<bool>,
-    #[serde(rename = "UpdatedDateUTC")]
-    pub updated_date_utc: String,
+    #[serde(rename = "UpdatedDateUTC", with = "xero_datetime_format")]
+    pub updated_date_utc: OffsetDateTime,
 }
 
 #[derive(Deserialize)]
@@ -76,8 +80,10 @@ impl Default for ContactIdentifier {
 pub struct Builder {
     pub contact: ContactIdentifier,
     pub line_items: Vec<line_item::Builder>,
-    pub date: Option<NaiveDateTime>,
-    pub delivery_date: Option<NaiveDateTime>,
+    #[serde(with = "xero_date_format_option", skip_serializing_if = "Option::is_none")]
+    pub date: Option<Date>,
+    #[serde(with = "xero_date_format_option", skip_serializing_if = "Option::is_none")]
+    pub delivery_date: Option<Date>,
     pub line_amount_types: Option<LineAmountType>,
     pub purchase_order_number: Option<String>,
     pub reference: Option<String>,
@@ -90,7 +96,8 @@ pub struct Builder {
     pub attention_to: Option<String>,
     pub telephone: Option<String>,
     pub delivery_instructions: Option<String>,
-    pub expected_arrival_date: Option<NaiveDateTime>,
+    #[serde(with = "xero_date_format_option", skip_serializing_if = "Option::is_none")]
+    pub expected_arrival_date: Option<Date>,
     #[serde(rename = "PurchaseOrderID")]
     pub purchase_order_id: Option<Uuid>,
 }
@@ -101,7 +108,7 @@ impl Builder {
         Self {
             contact,
             line_items,
-            ..Builder::default()
+            ..Default::default()
         }
     }
 }

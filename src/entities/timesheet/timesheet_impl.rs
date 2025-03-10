@@ -1,20 +1,59 @@
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
 use uuid::Uuid;
+use time::Date;
 
 use super::{TimesheetLine, TimesheetStatus};
-use crate::error::Result;
+use crate::{
+    error::Result,
+    utils::date_format::{xero_date_format, xero_date_format_option},
+};
+
+/// Parameters for filtering timesheet list results
+#[derive(Debug, Serialize, Default)]
+pub struct ListParameters {
+    /// The employee ID to filter by
+    #[serde(rename = "EmployeeId", skip_serializing_if = "Option::is_none")]
+    pub employee_id: Option<Uuid>,
+    
+    /// Filter by status (e.g., "DRAFT", "APPROVED", "PROCESSED")
+    #[serde(rename = "Status", skip_serializing_if = "Option::is_none")]
+    pub status: Option<TimesheetStatus>,
+    
+    /// Filter by start date (timesheets that start on or after this date)
+    #[serde(rename = "StartDate", with = "xero_date_format_option", skip_serializing_if = "Option::is_none")]
+    pub start_date: Option<Date>,
+    
+    /// Filter by end date (timesheets that end on or before this date)
+    #[serde(rename = "EndDate", with = "xero_date_format_option", skip_serializing_if = "Option::is_none")]
+    pub end_date: Option<Date>,
+    
+    /// Page number for pagination
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub page: Option<i32>,
+    
+    /// Filter by any field using Xero's WHERE syntax
+    #[serde(rename = "where", skip_serializing_if = "Option::is_none")]
+    pub where_filter: Option<String>,
+    
+    /// Order results by a specific field
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub order: Option<String>,
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct CreateTimesheet {
     #[serde(rename = "EmployeeID")]
     pub employee_id: Uuid,
-    pub start_date: String,
-    pub end_date: String,
-    pub status: TimesheetStatus,
-    pub hours: f64,
-    pub timesheet_lines: Vec<TimesheetLine>,
+    #[serde(with = "xero_date_format")]
+    pub start_date: Date,
+    #[serde(with = "xero_date_format")]
+    pub end_date: Date,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<TimesheetStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timesheet_lines: Option<Vec<TimesheetLine>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -24,8 +63,10 @@ pub struct Timesheet {
     pub timesheet_id: Uuid,
     #[serde(rename = "EmployeeID")]
     pub employee_id: Uuid,
-    pub start_date: String,
-    pub end_date: String,
+    #[serde(with = "xero_date_format")]
+    pub start_date: Date,
+    #[serde(with = "xero_date_format")]
+    pub end_date: Date,
     pub status: TimesheetStatus,
     pub hours: f64,
     pub timesheet_lines: Vec<TimesheetLine>,
@@ -37,7 +78,7 @@ pub struct TimesheetRequest {
     pub timesheets: Vec<Timesheet>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct TimesheetResponse {
     pub timesheets: Vec<Timesheet>,
@@ -123,23 +164,49 @@ impl Timesheet {
         Ok(response.timesheets.into_iter().next().unwrap())
     }
 
-    /// Gets all timesheets
-    pub async fn list(client: &crate::client::Client) -> Result<Vec<Timesheet>> {
-        info!("Listing all timesheets");
+    /// Gets all timesheets with optional filtering
+    ///
+    /// # Parameters
+    ///
+    /// * `client` - The Xero client
+    /// * `parameters` - Optional filter parameters, including employee_id, status, date range, page, where, order
+    /// * `modified_after` - Optional ISO8601 timestamp to filter by modification date
+    pub async fn list(
+        client: &crate::client::Client, 
+        parameters: Option<&ListParameters>,
+        modified_after: Option<String>
+    ) -> Result<Vec<Timesheet>> {
+        info!("Listing timesheets with filters: {:?}", parameters);
 
         let url = "https://api.xero.com/payroll.xro/1.0/Timesheets";
         debug!("GET URL: {}", url);
 
-        let response: TimesheetResponse = match client.get(url, &()).await {
-            Ok(response) => {
-                info!("Timesheet list retrieval successful");
-                response
-            }
-            Err(e) => {
-                error!("Error listing timesheets: {:?}", e);
-                return Err(e);
-            }
-        };
+        // Build the request with parameters and headers
+        let mut request = client.build_request(reqwest::Method::GET, url);
+        
+        // Add If-Modified-Since header if provided
+        if let Some(date) = modified_after {
+            request = request.header("If-Modified-Since", date);
+        }
+
+        // Add query parameters
+        if let Some(params) = parameters {
+            request = request.query(params);
+        }
+
+        // Send the request
+        let response = request.send().await?;
+        let status = response.status();
+        
+        if !status.is_success() {
+            error!("Error listing timesheets: HTTP status {}", status);
+            return Err(crate::error::Error::API(
+                serde_json::from_str(&response.text().await?)?,
+            ));
+        }
+
+        // Parse the response
+        let response: TimesheetResponse = response.json().await?;
 
         debug!("Response contains {} timesheets", response.timesheets.len());
         Ok(response.timesheets)

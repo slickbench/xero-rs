@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use time::Date;
 use std::str::FromStr;
+use crate::utils::date_format::{xero_date_format, xero_date_format_option};
 
 /// Calendar types supported by the Xero Payroll API
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -65,6 +66,13 @@ pub struct PayCalendar {
     pub reference_date: Option<Date>,
 }
 
+impl PayCalendar {
+    /// Returns the end date of the pay period, which is the day before the payment date
+    pub fn end_date(&self) -> Date {
+        self.payment_date.saturating_sub(time::Duration::days(1))
+    }
+}
+
 /// Response wrapper for pay calendar API requests
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -117,85 +125,5 @@ mod calendar_type_string {
     {
         let s = String::deserialize(deserializer)?;
         s.parse::<CalendarType>().map_err(serde::de::Error::custom)
-    }
-}
-
-// Serialization helpers for Xero date formats
-mod xero_date_format {
-    use serde::{self, Deserialize, Deserializer, Serializer};
-    use time::{Date, macros::format_description};
-
-    // Function to handle Xero's .NET JSON date format (/Date(timestamp)/)
-    pub fn parse_dotnet_date(date_str: &str) -> Result<Date, String> {
-        // Extract the timestamp from the .NET date format
-        if date_str.starts_with("/Date(") && date_str.ends_with(")/") {
-            let timestamp_str = date_str
-                .trim_start_matches("/Date(")
-                .trim_end_matches(")/")
-                .split('+')
-                .next()
-                .unwrap_or(date_str);
-            
-            // Try to parse as a timestamp (milliseconds since epoch)
-            if let Ok(timestamp) = timestamp_str.parse::<i64>() {
-                // Convert to seconds and create a Date
-                let seconds = timestamp / 1000;
-                let date = time::OffsetDateTime::from_unix_timestamp(seconds)
-                    .map_err(|e| format!("Invalid timestamp: {}", e))?
-                    .date();
-                return Ok(date);
-            }
-        }
-        
-        // If not a .NET date format, try as ISO format
-        let format = format_description!("[year]-[month]-[day]");
-        Date::parse(date_str, &format)
-            .map_err(|e| format!("Failed to parse date '{}': {}", date_str, e))
-    }
-
-    pub fn serialize<S>(date: &Date, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        // Format as ISO 8601 date (YYYY-MM-DD)
-        let formatted = date
-            .format(&format_description!("[year]-[month]-[day]"))
-            .map_err(serde::ser::Error::custom)?;
-        serializer.serialize_str(&formatted)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Date, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let date_str = String::deserialize(deserializer)?;
-        
-        // Try to parse the date string
-        parse_dotnet_date(&date_str).map_err(serde::de::Error::custom)
-    }
-}
-
-// Optional date serialization
-mod xero_date_format_option {
-    use serde::{self, Deserialize, Deserializer};
-    use time::Date;
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Date>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let opt = Option::<String>::deserialize(deserializer)?;
-        
-        match opt {
-            Some(s) if !s.is_empty() => {
-                // Try to parse the date string
-                let date_result = super::xero_date_format::parse_dotnet_date(&s);
-                match date_result {
-                    Ok(date) => Ok(Some(date)),
-                    Err(_) => Ok(None), // Return None if parsing fails
-                }
-            }
-            _ => Ok(None),
-        }
     }
 }

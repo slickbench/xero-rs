@@ -104,7 +104,7 @@ pub enum Error {
     #[error("attachment too large")]
     AttachmentTooLarge,
 
-    #[error("error decoding response: {0:?} | body: {1:#?}")]
+    #[error("error decoding response: {0:?}")]
     DeserializationError(serde_json::Error, Option<String>),
 
     #[error("object not found: {entity} (url: {url})")]
