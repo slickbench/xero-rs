@@ -34,7 +34,6 @@ tracing = "0.1"
 
 # Errors
 thiserror = "2"
-tracing-subscriber = "0.3"
 miette = { version = "7" }
 
 [dev-dependencies]
