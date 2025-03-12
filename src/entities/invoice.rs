@@ -121,6 +121,7 @@ impl Default for ContactIdentifier {
 }
 
 #[derive(Default, Debug, Serialize)]
+#[serde(rename_all = "PascalCase")]
 pub struct Builder {
     #[serde(rename = "Type")]
     pub r#type: Type,

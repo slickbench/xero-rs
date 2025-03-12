@@ -77,6 +77,7 @@ impl Default for ContactIdentifier {
 }
 
 #[derive(Default, Debug, Serialize)]
+#[serde(rename_all = "PascalCase")]
 pub struct Builder {
     pub contact: ContactIdentifier,
     pub line_items: Vec<line_item::Builder>,
