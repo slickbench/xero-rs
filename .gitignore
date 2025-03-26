@@ -16,3 +16,8 @@ Cargo.lock
 
 /target
 #Cargo.lock
+
+Xero-OpenAPI/
+log.txt
+
+.DS_Store

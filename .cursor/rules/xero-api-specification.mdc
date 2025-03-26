@@ -1,0 +1,74 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Instructions for Working with Xero API Documentation
+
+## Finding the OpenAPI Specifications
+
+1. All Xero API specifications are located in the @./Xero-OpenAPI directory.
+
+2. The main API specifications are provided as YAML files:
+   - @Xero-OpenAPI/xero_accounting.yaml - Core accounting functionality
+   - @Xero-OpenAPI/xero-identity.yaml - Authentication and identity
+   - @Xero-OpenAPI/xero_bankfeeds.yaml - Bank feed integration
+   - @Xero-OpenAPI/xero_assets.yaml - Fixed assets management
+   - @Xero-OpenAPI/xero-projects.yaml - Project management
+   - @Xero-OpenAPI/xero-payroll-au.yaml, @Xero-OpenAPI/xero-payroll-uk.yaml, @Xero-OpenAPI/xero-payroll-nz.yaml - Region-specific payroll
+   - @Xero-OpenAPI/xero_files.yaml - File storage and management
+
+## Reading and Interpreting the Specifications
+
+1. Parse YAML files using appropriate tools to extract:
+   - Endpoint definitions
+   - Request parameters
+   - Response schemas
+   - Data models
+
+2. For each endpoint, identify:
+   - HTTP method (GET, POST, PUT, DELETE)
+   - Path parameters
+   - Query parameters
+   - Request body schema
+   - Response structure
+   - Authentication requirements
+
+3. When implementing client methods, maintain consistency with the OpenAPI specification naming and parameter structure.
+
+## Mapping to Rust Implementation
+
+1. Map OpenAPI schema types to appropriate Rust types:
+   - String → `String`
+   - Number/Integer → `i32`, `i64`, `f64` as appropriate
+   - Boolean → `bool`
+   - Array → `Vec<T>`
+   - Object → custom struct
+
+2. Implement serialization/deserialization using `serde` with field attributes matching the API specification.
+
+3. Follow entity organization in `src/entities/mod.rs` for new models.
+
+4. Add new public API methods to `src/lib.rs` following existing patterns.
+
+## Documentation and Testing
+
+1. Document each public API with doc comments including:
+   - Endpoint purpose
+   - Required parameters
+   - Response structure
+   - Usage examples
+   - Link to official Xero documentation
+
+2. Create tests in the `tests/` directory following established patterns.
+
+## Error Handling
+
+1. Use `miette` for comprehensive error handling.
+2. Map API error responses to appropriate Rust error types.
+3. Include HTTP status codes in error context.
+
+## Authentication
+
+1. Implement OAuth2 authentication as specified in @Xero-OpenAPI/xero-identity.yaml.
+2. Use the `oauth2` crate for token management.

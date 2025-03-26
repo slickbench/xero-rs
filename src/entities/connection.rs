@@ -27,5 +27,6 @@ pub struct Connection {
 /// Retrieve a list of authorized connections (tennants).
 #[instrument(skip(client))]
 pub async fn list(client: &Client) -> Result<Vec<Connection>> {
-    client.get(ENDPOINT, Vec::<String>::default()).await
+    let empty_vec: Vec<String> = Vec::new();
+    client.get(ENDPOINT, &empty_vec).await
 }

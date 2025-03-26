@@ -86,7 +86,7 @@ pub struct MutationResponse {
     pub status: MutationStatus,
     pub provider_name: String,
     #[serde(rename = "DateTimeUTC")]
-    pub date_time_utc: String,
+    pub date_time_utc: Option<String>,
 
     #[serde(flatten)]
     pub data: Data,
@@ -115,6 +115,9 @@ pub mod endpoint_utils {
         error::{Error, Result},
         Client,
     };
+    
+    // Re-export list function for easier access
+    pub use self::impl_helpers::list;
 
     /// Generic function to get a single entity by ID
     pub async fn get<T, R>(
@@ -124,14 +127,17 @@ pub mod endpoint_utils {
         entity_name: &str,
     ) -> Result<T>
     where
-        R: DeserializeOwned + Into<Vec<T>>,
+        R: DeserializeOwned,
+        Vec<T>: From<R>,
     {
         let endpoint = Url::from_str(endpoint)
             .and_then(|endpoint| endpoint.join(&id.to_string()))
             .map_err(|_| Error::InvalidEndpoint)?;
         let endpoint_str = endpoint.to_string();
-        let response: R = client.get(endpoint, Vec::<String>::default()).await?;
-        response.into().into_iter().next().ok_or(Error::NotFound {
+        let empty_vec: Vec<String> = Vec::new();
+        let response: R = client.get(endpoint, &empty_vec).await?;
+        let items: Vec<T> = Vec::from(response);
+        items.into_iter().next().ok_or(Error::NotFound {
             entity: entity_name.to_string(),
             url: endpoint_str,
             status_code: reqwest::StatusCode::NOT_FOUND,
@@ -139,14 +145,35 @@ pub mod endpoint_utils {
         })
     }
 
-    /// Generic function to list entities with optional parameters
-    pub async fn list<T, R, P>(client: &Client, endpoint: &str, params: P) -> Result<Vec<T>>
-    where
-        R: DeserializeOwned + Into<Vec<T>>,
-        P: serde::Serialize + std::fmt::Debug,
-    {
-        let response: R = client.get(endpoint, params).await?;
-        Ok(response.into())
+    /// Helper implementations for working with API entity collections.
+    pub mod impl_helpers {
+        use super::*;
+        use serde::de::DeserializeOwned;
+
+        /// Lists all entities without filtering
+        pub async fn list_all<T, R>(client: &Client, endpoint: &str) -> Result<Vec<T>>
+        where
+            T: DeserializeOwned,
+            Vec<T>: From<R>,
+            R: DeserializeOwned,
+        {
+            let empty_vec: Vec<String> = Vec::new();
+            let response: R = client.get(endpoint, &empty_vec).await?;
+            Ok(Vec::from(response))
+        }
+
+        /// Lists entities with filtering
+        #[allow(clippy::module_name_repetitions)]
+        pub async fn list<T, R, P>(client: &Client, endpoint: &str, params: &P) -> Result<Vec<T>>
+        where
+            T: DeserializeOwned,
+            Vec<T>: From<R>,
+            R: DeserializeOwned,
+            P: serde::Serialize + std::fmt::Debug,
+        {
+            let response: R = client.get(endpoint, params).await?;
+            Ok(Vec::from(response))
+        }
     }
 }
 
@@ -169,11 +196,12 @@ pub mod builder_utils {
     pub async fn create<T, R, B>(client: &Client, endpoint: &str, builder: &B) -> Result<T>
     where
         T: DeserializeOwned,
-        R: DeserializeOwned + Into<Option<T>>,
+        Option<T>: From<R>,
+        R: DeserializeOwned,
         B: Serialize + std::fmt::Debug,
     {
         let response: R = client.post(endpoint, builder).await?;
-        response.into().ok_or_else(|| Error::NotFound {
+        Option::from(response).ok_or_else(|| Error::NotFound {
             entity: std::any::type_name::<T>().to_string(),
             url: endpoint.to_string(),
             status_code: reqwest::StatusCode::INTERNAL_SERVER_ERROR,

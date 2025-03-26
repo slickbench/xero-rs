@@ -23,7 +23,8 @@ pub struct LineItem {
     pub account_code: Option<String>,
     #[serde(rename = "LineItemID")]
     pub line_item_id: Uuid,
-    pub tax_type: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tax_type: Option<String>,
     pub tax_amount: Decimal,
     pub line_amount: Decimal,
     pub discount_rate: Option<Decimal>,
@@ -52,7 +53,7 @@ pub struct Builder {
     pub unit_amount: Decimal,
     pub item_code: Option<String>,
     pub account_code: Option<String>,
-    pub tax_type: String,
+    pub tax_type: Option<String>,
     pub discount_rate: Option<Decimal>,
     // tracking
     #[serde(rename = "LineItemID")]

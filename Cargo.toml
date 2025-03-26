@@ -1,6 +1,6 @@
 [package]
 name = "xero-rs"
-version = "0.1.0-alpha.4"
+version = "0.1.0-alpha.5"
 edition = "2018"
 description = "A Xero API client library for Rust"
 license-file = "LICENSE"
@@ -35,6 +35,8 @@ tracing = "0.1"
 # Errors
 thiserror = "2"
 miette = { version = "7" }
+tokio = { version = "1", features = ["time", "macros"] }
+tokio-retry = "0.3.0"
 
 [dev-dependencies]
 rust_decimal_macros = "1.15"

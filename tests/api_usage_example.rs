@@ -66,7 +66,7 @@ async fn test_method_based_api() -> Result<()> {
     }
     
     // List quotes
-    let quotes = client.quotes().list().await?;
+    let quotes = client.quotes().list(xero_rs::quote::ListParameters::default()).await?;
     info!("Found {} quotes", quotes.len());
     
     if !quotes.is_empty() {

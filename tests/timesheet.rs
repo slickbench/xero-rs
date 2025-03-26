@@ -20,7 +20,6 @@ async fn test_timesheet_crud() -> miette::Result<()> {
     // Create a Xero API client
     let client = test_utils::create_test_client(Some(test_utils::payroll_scopes())).await?;
     
-    // Run the main test logic
     run_test(&client).await?;
     
     // Clean up resources
@@ -148,6 +147,7 @@ async fn run_test(client: &Client) -> miette::Result<()> {
             let days_in_period = (end_date - start_date).whole_days() + 1;
             let mut units = Vec::with_capacity(days_in_period as usize);
             
+ 
             // Fill with 8 hours for each working day in the period
             for i in 0..days_in_period {
                 let current_date = start_date.saturating_add(Duration::days(i));

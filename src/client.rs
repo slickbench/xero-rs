@@ -1,12 +1,14 @@
 use core::fmt;
 use std::borrow::Cow;
 use std::str::FromStr;
+use std::time::Duration;
 
 use oauth2::{
     AccessToken, AuthorizationCode, CsrfToken, HttpClientError, RefreshToken, TokenResponse,
 };
-use reqwest::{header, IntoUrl, Method, RequestBuilder, StatusCode};
+use reqwest::{header, IntoUrl, Method, RequestBuilder, Response, StatusCode};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use tokio::time::sleep;
 use url::Url;
 use uuid::Uuid;
 
@@ -32,6 +34,82 @@ use crate::payroll::{
 
 const XERO_AUTH_URL: &str = "https://login.xero.com/identity/connect/authorize";
 const XERO_TOKEN_URL: &str = "https://identity.xero.com/connect/token";
+const MAX_RETRY_ATTEMPTS: usize = 3;
+
+// Rate limiting headers used by the Xero API
+/// Header containing number of remaining daily API calls
+const HEADER_DAY_LIMIT_REMAINING: &str = "X-DayLimit-Remaining";
+/// Header containing number of remaining per-minute API calls
+const HEADER_MIN_LIMIT_REMAINING: &str = "X-MinLimit-Remaining";
+/// Header containing number of remaining app-wide per-minute API calls
+const HEADER_APP_MIN_LIMIT_REMAINING: &str = "X-AppMinLimit-Remaining";
+/// Header identifying which rate limit was hit when a 429 is returned
+const HEADER_RATE_LIMIT_PROBLEM: &str = "X-Rate-Limit-Problem";
+
+#[derive(Debug, Clone)]
+/// Information about the remaining API rate limits
+///
+/// Xero applies several rate limits to API usage:
+/// - Daily limit: 5000 calls per day per tenant
+/// - Minute limit: 60 calls per minute per tenant
+/// - App minute limit: 10,000 calls per minute across all tenants
+pub struct RateLimitInfo {
+    /// Number of remaining API calls for the day (out of 5000)
+    pub day_limit_remaining: Option<u32>,
+    /// Number of remaining API calls for the minute (out of 60)
+    pub minute_limit_remaining: Option<u32>,
+    /// Number of remaining API calls for the app across all tenants (out of 10,000)
+    pub app_minute_limit_remaining: Option<u32>,
+}
+
+impl Default for RateLimitInfo {
+    fn default() -> Self {
+        Self {
+            day_limit_remaining: None,
+            minute_limit_remaining: None,
+            app_minute_limit_remaining: None,
+        }
+    }
+}
+
+impl RateLimitInfo {
+    /// Extract rate limit information from response headers
+    fn from_response_headers(headers: &header::HeaderMap) -> Self {
+        Self {
+            day_limit_remaining: headers
+                .get(HEADER_DAY_LIMIT_REMAINING)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.parse::<u32>().ok()),
+            minute_limit_remaining: headers
+                .get(HEADER_MIN_LIMIT_REMAINING)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.parse::<u32>().ok()),
+            app_minute_limit_remaining: headers
+                .get(HEADER_APP_MIN_LIMIT_REMAINING)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.parse::<u32>().ok()),
+        }
+    }
+    
+    /// Returns true if any of the limits are close to being exhausted
+    pub fn is_near_limit(&self) -> bool {
+        self.day_limit_remaining.map_or(false, |v| v < 100) ||
+        self.minute_limit_remaining.map_or(false, |v| v < 10) ||
+        self.app_minute_limit_remaining.map_or(false, |v| v < 100)
+    }
+    
+    /// Log current rate limit status if getting close to limits
+    pub fn log_if_near_limit(&self) {
+        if self.is_near_limit() {
+            tracing::warn!(
+                "Approaching Xero API rate limits: day={:?}, minute={:?}, app_minute={:?}", 
+                self.day_limit_remaining,
+                self.minute_limit_remaining,
+                self.app_minute_limit_remaining
+            );
+        }
+    }
+}
 
 #[allow(unused)]
 #[derive(Clone, Debug)]
@@ -41,6 +119,12 @@ pub struct Client {
     access_token: AccessToken,
     refresh_token: Option<RefreshToken>,
     tenant_id: Option<Uuid>,
+    /// Information about API rate limits from the latest API response
+    ///
+    /// This field is updated with rate limit information from each successful API call.
+    /// It can be used to monitor when you're approaching rate limits to implement preemptive
+    /// throttling or backoff strategies.
+    rate_limit_info: RateLimitInfo,
 }
 
 impl Client {
@@ -122,6 +206,7 @@ impl Client {
             access_token,
             refresh_token,
             tenant_id: None,
+            rate_limit_info: RateLimitInfo::default(),
         })
     }
 
@@ -151,6 +236,7 @@ impl Client {
             access_token: token_result.access_token().clone(),
             refresh_token: token_result.refresh_token().cloned(),
             tenant_id: None,
+            rate_limit_info: RateLimitInfo::default(),
         })
     }
 
@@ -191,29 +277,74 @@ impl Client {
             .header(header::ACCEPT, "application/json")
     }
 
-    /// Perform an authenticated `GET` request against the API.
+    /// Update rate limit information from a response
+    fn update_rate_limits(&mut self, response: &Response) {
+        let rate_limits = RateLimitInfo::from_response_headers(response.headers());
+        self.rate_limit_info = rate_limits;
+        self.rate_limit_info.log_if_near_limit();
+    }
+    
+    /// Get the current rate limit information
+    pub fn rate_limit_info(&self) -> &RateLimitInfo {
+        &self.rate_limit_info
+    }
+
+    /// Execute a request with automatic retry for rate limit errors
+    async fn execute_with_retry<T, F, Fut>(&self, request_fn: F) -> Result<T>
+    where
+        F: Fn() -> Fut,
+        Fut: std::future::Future<Output = Result<T>>,
+    {
+        let mut attempts = 0;
+        
+        loop {
+            attempts += 1;
+            
+            match request_fn().await {
+                Ok(result) => return Ok(result),
+                Err(Error::RateLimitExceeded { retry_after, .. }) if attempts <= MAX_RETRY_ATTEMPTS => {
+                    let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
+                    
+                    tracing::warn!(
+                        "Rate limit exceeded (attempt {}/{}), waiting for {:?} before retrying",
+                        attempts,
+                        MAX_RETRY_ATTEMPTS,
+                        wait_time
+                    );
+                    
+                    // Wait for the specified time before retrying
+                    sleep(wait_time).await;
+                    continue;
+                },
+                Err(e) => return Err(e),
+            }
+        }
+    }
+
+    /// Perform an authenticated `GET` request against the API with automatic retry.
     #[instrument(skip(self, query))]
     pub async fn get<
         'a,
         R: DeserializeOwned,
-        U: IntoUrl + fmt::Debug,
+        U: IntoUrl + fmt::Debug + Clone,
         T: Serialize + Sized + fmt::Debug,
     >(
         &self,
         url: U,
-        query: T,
+        query: &T,
     ) -> Result<R> {
-        trace!(?query, ?url, "making GET request");
-        Self::handle_response(
-            self.build_request(Method::GET, url)
-                .query(&query)
+        self.execute_with_retry(|| async {
+            trace!(?query, ?url, "making GET request");
+            let response = self.build_request(Method::GET, url.clone())
+                .query(query)
                 .send()
-                .await?,
-        )
-        .await
+                .await?;
+                
+            Self::handle_response(response).await
+        }).await
     }
 
-    /// Perform a `GET` request against the API using a typed XeroEndpoint.
+    /// Perform a `GET` request against the API using a typed XeroEndpoint with automatic retry.
     #[instrument(skip(self, query))]
     pub async fn get_endpoint<
         'a,
@@ -222,122 +353,138 @@ impl Client {
     >(
         &self,
         endpoint: XeroEndpoint,
-        query: T,
+        query: &T,
     ) -> Result<R> {
-        trace!(?query, endpoint = ?endpoint, "making GET request with endpoint");
-        let url = endpoint.to_url()?;
-        Self::handle_response(
-            self.build_request(Method::GET, url)
-                .query(&query)
+        self.execute_with_retry(|| async {
+            trace!(?query, endpoint = ?endpoint, "making GET request with endpoint");
+            let url = endpoint.to_url()?;
+            let response = self.build_request(Method::GET, url)
+                .query(query)
                 .send()
-                .await?,
-        )
-        .await
+                .await?;
+                
+            Self::handle_response(response).await
+        }).await
     }
 
-    /// Perform an authenticated `PUT` request against the API. This method can only create new objects.
+    /// Perform an authenticated `PUT` request against the API with automatic retry.
     #[instrument(skip(self, data))]
-    pub async fn put<'a, R: DeserializeOwned, U: IntoUrl + fmt::Debug, T: Serialize + Sized>(
+    pub async fn put<
+        'a, 
+        R: DeserializeOwned, 
+        U: IntoUrl + fmt::Debug + Clone, 
+        T: Serialize + Sized
+    >(
         &self,
         url: U,
         data: &T,
     ) -> Result<R> {
-        trace!(json = ?serde_json::to_string(&data).unwrap(), ?url, "making PUT request");
-        Self::handle_response(
-            self.build_request(Method::PUT, url)
+        self.execute_with_retry(|| async {
+            trace!(json = ?serde_json::to_string(data).unwrap(), ?url, "making PUT request");
+            let response = self.build_request(Method::PUT, url.clone())
                 .json(data)
                 .send()
-                .await?,
-        )
-        .await
+                .await?;
+                
+            Self::handle_response(response).await
+        }).await
     }
 
-    /// Perform an authenticated `POST` request against the API. This method can create or update objects.
+    /// Perform an authenticated `POST` request against the API with automatic retry.
     #[instrument(skip(self, data))]
     pub async fn post<
         'a,
         R: DeserializeOwned,
-        U: IntoUrl + fmt::Debug,
+        U: IntoUrl + fmt::Debug + Clone,
         T: Serialize + Sized + fmt::Debug,
     >(
         &self,
         url: U,
         data: &T,
     ) -> Result<R> {
-        trace!(json = ?serde_json::to_string(&data).unwrap(), ?url, "making POST request");
-        Self::handle_response(
-            self.build_request(Method::POST, url)
+        self.execute_with_retry(|| async {
+            trace!(json = ?serde_json::to_string(data).unwrap(), ?url, "making POST request");
+            let response = self.build_request(Method::POST, url.clone())
                 .json(data)
                 .send()
-                .await?,
-        )
-        .await
+                .await?;
+                
+            Self::handle_response(response).await
+        }).await
     }
 
-    /// Perform an authenticated `DELETE` request against the API.
-    #[instrument(skip(self))]
-    pub async fn delete<U: IntoUrl + fmt::Debug>(&self, url: U) -> Result<()> {
-        trace!(?url, "making DELETE request");
-        let response = self.build_request(Method::DELETE, url).send().await?;
-        if response.status() == StatusCode::NO_CONTENT || response.status() == StatusCode::OK {
-            Ok(())
-        } else {
-            let content_length = response.content_length().unwrap_or(0);
-            if content_length == 0 {
-                Err(Error::Request(response.error_for_status().unwrap_err()))
-            } else {
-                Err(Error::API(response.json().await?))
-            }
-        }
-    }
-
-    /// Perform a `POST` request against the API using a typed XeroEndpoint.
+    /// Perform a `POST` request against the API using a typed XeroEndpoint with automatic retry.
     #[instrument(skip(self, data))]
     pub async fn post_endpoint<'a, R: DeserializeOwned, T: Serialize + Sized + fmt::Debug>(
         &self,
         endpoint: XeroEndpoint,
         data: &T,
     ) -> Result<R> {
-        trace!(?data, endpoint = ?endpoint, "making POST request with endpoint");
-        let url = endpoint.to_url()?;
-        Self::handle_response(
-            self.build_request(Method::POST, url)
+        self.execute_with_retry(|| async {
+            trace!(?data, endpoint = ?endpoint, "making POST request with endpoint");
+            let url = endpoint.to_url()?;
+            let response = self.build_request(Method::POST, url)
                 .json(data)
                 .send()
-                .await?,
-        )
-        .await
+                .await?;
+                
+            Self::handle_response(response).await
+        }).await
     }
 
-    /// Perform a `PUT` request against the API using a typed XeroEndpoint.
+    /// Perform a `PUT` request against the API using a typed XeroEndpoint with automatic retry.
     #[instrument(skip(self, data))]
     pub async fn put_endpoint<'a, R: DeserializeOwned, T: Serialize + Sized>(
         &self,
         endpoint: XeroEndpoint,
         data: &T,
     ) -> Result<R> {
-        trace!(endpoint = ?endpoint, "making PUT request with endpoint");
-        let url = endpoint.to_url()?;
-        Self::handle_response(
-            self.build_request(Method::PUT, url)
+        self.execute_with_retry(|| async {
+            trace!(endpoint = ?endpoint, "making PUT request with endpoint");
+            let url = endpoint.to_url()?;
+            let response = self.build_request(Method::PUT, url)
                 .json(data)
                 .send()
-                .await?,
-        )
-        .await
+                .await?;
+                
+            Self::handle_response(response).await
+        }).await
     }
 
-    /// Perform a `DELETE` request against the API using a typed XeroEndpoint.
+    /// Perform an authenticated `DELETE` request against the API with automatic retry.
+    #[instrument(skip(self))]
+    pub async fn delete<U: IntoUrl + fmt::Debug + Clone>(&self, url: U) -> Result<()> {
+        self.execute_with_retry(|| async {
+            trace!(?url, "making DELETE request");
+            let response = self.build_request(Method::DELETE, url.clone()).send().await?;
+            
+            if response.status() == StatusCode::NO_CONTENT || response.status() == StatusCode::OK {
+                Ok(())
+            } else {
+                let content_length = response.content_length().unwrap_or(0);
+                if content_length == 0 {
+                    Err(Error::Request(response.error_for_status().unwrap_err()))
+                } else {
+                    Err(Error::API(response.json().await?))
+                }
+            }
+        }).await
+    }
+
+    /// Perform a `DELETE` request against the API using a typed XeroEndpoint with automatic retry.
     #[instrument(skip(self))]
     pub async fn delete_endpoint(&self, endpoint: XeroEndpoint) -> Result<()> {
-        trace!(endpoint = ?endpoint, "making DELETE request with endpoint");
-        let url = endpoint.to_url()?;
-        let response = self.build_request(Method::DELETE, url).send().await?;
-        if response.status() == StatusCode::NO_CONTENT {
-            Ok(())
-        } else {
-            Self::handle_response::<()>(response).await
-        }
+        self.execute_with_retry(|| async {
+            trace!(endpoint = ?endpoint, "making DELETE request with endpoint");
+            let url = endpoint.to_url()?;
+            let response = self.build_request(Method::DELETE, url).send().await?;
+            
+            if response.status() == StatusCode::NO_CONTENT {
+                Ok(())
+            } else {
+                Self::handle_response::<()>(response).await
+            }
+        }).await
     }
 
     #[instrument(skip(response))]
@@ -358,13 +505,71 @@ impl Client {
             status,
             entity_type
         );
+        
+        // Extract rate limit information for logging
+        let rate_limit_info = RateLimitInfo::from_response_headers(response.headers());
+        
+        // Log rate limit information if we're getting close to limits
+        if rate_limit_info.is_near_limit() {
+            tracing::warn!(
+                "Approaching Xero API rate limits: day_remaining={:?}, minute_remaining={:?}, app_minute_remaining={:?}",
+                rate_limit_info.day_limit_remaining,
+                rate_limit_info.minute_limit_remaining,
+                rate_limit_info.app_minute_limit_remaining
+            );
+        }
+        
+        // Handle rate limiting (429 Too Many Requests)
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            // Extract rate limit headers
+            let rate_limit_problem = response.headers()
+                .get(HEADER_RATE_LIMIT_PROBLEM)
+                .and_then(|v| v.to_str().ok())
+                .map(String::from);
+                
+            let retry_after = response.headers()
+                .get(header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.parse::<u64>().ok())
+                .map(std::time::Duration::from_secs);
+                
+            // Log rate limit hit with detailed information
+            tracing::warn!(
+                "Rate limit exceeded for {}: problem={:?}, retry_after={:?}, day_remaining={:?}, minute_remaining={:?}, app_minute_remaining={:?}",
+                url,
+                rate_limit_problem,
+                retry_after,
+                rate_limit_info.day_limit_remaining,
+                rate_limit_info.minute_limit_remaining,
+                rate_limit_info.app_minute_limit_remaining
+            );
+            
+            // Get response text for error context
+            let text = response.text().await.unwrap_or_default();
+            
+            return Err(Error::RateLimitExceeded {
+                retry_after,
+                status_code: status,
+                url,
+                response_body: Some(text),
+            });
+        }
 
         let text = response.text().await?;
-        tracing::trace!("Response body: {}", text);
+        
+        // Only log brief info about response size at debug level
+        tracing::debug!("Response body size: {} bytes", text.len());
 
         let handle_deserialize_error = {
             let text = text.clone();
-            |e: serde_json::Error| Error::DeserializationError(e, Some(text))
+            |e: serde_json::Error| {
+                tracing::error!("Deserialization error: {}, near position: {} - response text around that position: {}", 
+                    e, 
+                    e.column(),
+                    &text.chars().skip(e.column().saturating_sub(30)).take(100).collect::<String>()
+                );
+                Error::DeserializationError(e, Some(text))
+            }
         };
 
         match status {
@@ -454,7 +659,8 @@ impl ContactsApi<'_> {
     /// Retrieve a list of contacts
     #[instrument(skip(self))]
     pub async fn list(&self) -> Result<Vec<Contact>> {
-        let response: contact::ListResponse = self.client.get_endpoint(XeroEndpoint::Contacts, Vec::<String>::default()).await?;
+        let empty_vec: Vec<String> = Vec::new();
+        let response: contact::ListResponse = self.client.get_endpoint(XeroEndpoint::Contacts, &empty_vec).await?;
         Ok(response.contacts)
     }
 
@@ -462,7 +668,8 @@ impl ContactsApi<'_> {
     #[instrument(skip(self))]
     pub async fn get(&self, contact_id: Uuid) -> Result<Contact> {
         let endpoint = XeroEndpoint::Contact(contact_id);
-        let response: contact::ListResponse = self.client.get_endpoint(endpoint.clone(), Vec::<String>::default()).await?;
+        let empty_vec: Vec<String> = Vec::new();
+        let response: contact::ListResponse = self.client.get_endpoint(endpoint.clone(), &empty_vec).await?;
         response.contacts.into_iter().next().ok_or(Error::NotFound {
             entity: "Contact".to_string(),
             url: endpoint.to_string(),
@@ -482,7 +689,7 @@ impl InvoicesApi<'_> {
     /// List invoices with optional parameters
     #[instrument(skip(self))]
     pub async fn list(&self, parameters: invoice::ListParameters) -> Result<Vec<Invoice>> {
-        let response: invoice::ListResponse = self.client.get_endpoint(XeroEndpoint::Invoices, parameters).await?;
+        let response: invoice::ListResponse = self.client.get_endpoint(XeroEndpoint::Invoices, &parameters).await?;
         Ok(response.invoices)
     }
 
@@ -496,7 +703,8 @@ impl InvoicesApi<'_> {
     #[instrument(skip(self))]
     pub async fn get(&self, invoice_id: Uuid) -> Result<Invoice> {
         let endpoint = XeroEndpoint::Invoice(invoice_id);
-        let response: invoice::ListResponse = self.client.get_endpoint(endpoint.clone(), ()).await?;
+        let empty_tuple = ();
+        let response: invoice::ListResponse = self.client.get_endpoint(endpoint.clone(), &empty_tuple).await?;
         response.invoices.into_iter().next().ok_or(Error::NotFound {
             entity: "Invoice".to_string(),
             url: endpoint.to_string(),
@@ -535,6 +743,78 @@ impl InvoicesApi<'_> {
                 response_body: Some("No invoice returned in response".to_string()),
             })
     }
+    
+    /// Update an existing invoice
+    #[instrument(skip(self, invoice))]
+    pub async fn update(&self, invoice_id: Uuid, invoice: &invoice::Builder) -> Result<Invoice> {
+        invoice::update(self.client, invoice_id, invoice).await
+    }
+    
+    /// Update or create an invoice
+    #[instrument(skip(self, invoice))]
+    pub async fn update_or_create(&self, invoice: &invoice::Builder) -> Result<Invoice> {
+        invoice::update_or_create(self.client, invoice).await
+    }
+    
+    /// Get the invoice as a PDF
+    #[instrument(skip(self))]
+    pub async fn get_pdf(&self, invoice_id: Uuid) -> Result<Vec<u8>> {
+        invoice::get_pdf(self.client, invoice_id).await
+    }
+    
+    /// Get an online invoice URL
+    #[instrument(skip(self))]
+    pub async fn get_online_invoice(&self, invoice_id: Uuid) -> Result<String> {
+        invoice::get_online_invoice(self.client, invoice_id).await
+    }
+    
+    /// Email the invoice to the contact
+    #[instrument(skip(self))]
+    pub async fn email(&self, invoice_id: Uuid) -> Result<()> {
+        invoice::email(self.client, invoice_id).await
+    }
+    
+    /// Get the history for an invoice
+    #[instrument(skip(self))]
+    pub async fn get_history(&self, invoice_id: Uuid) -> Result<Vec<invoice::HistoryRecord>> {
+        invoice::get_history(self.client, invoice_id).await
+    }
+    
+    /// Create a history record for an invoice
+    #[instrument(skip(self))]
+    pub async fn create_history(&self, invoice_id: Uuid, details: &str) -> Result<Vec<invoice::HistoryRecord>> {
+        invoice::create_history(self.client, invoice_id, details).await
+    }
+    
+    /// List attachments for an invoice
+    #[instrument(skip(self))]
+    pub async fn list_attachments(&self, invoice_id: Uuid) -> Result<Vec<invoice::Attachment>> {
+        invoice::list_attachments(self.client, invoice_id).await
+    }
+    
+    /// Get a specific attachment by ID
+    #[instrument(skip(self))]
+    pub async fn get_attachment(&self, invoice_id: Uuid, attachment_id: Uuid) -> Result<Vec<u8>> {
+        invoice::get_attachment(self.client, invoice_id, attachment_id).await
+    }
+    
+    /// Get an attachment by filename
+    #[instrument(skip(self))]
+    pub async fn get_attachment_by_filename(&self, invoice_id: Uuid, filename: &str) -> Result<Vec<u8>> {
+        invoice::get_attachment_by_filename(self.client, invoice_id, filename).await
+    }
+    
+    /// Upload an attachment to an invoice
+    #[instrument(skip(self, attachment_content))]
+    pub async fn upload_attachment(&self, invoice_id: Uuid, filename: &str, attachment_content: &[u8]) -> Result<invoice::Attachment> {
+        invoice::upload_attachment(self.client, invoice_id, filename, attachment_content).await
+    }
+    
+    /// Update an existing attachment
+    #[instrument(skip(self, attachment_content))]
+    pub async fn update_attachment(&self, invoice_id: Uuid, filename: &str, attachment_content: &[u8]) -> Result<invoice::Attachment> {
+        invoice::update_attachment(self.client, invoice_id, filename, attachment_content).await
+    }
 }
 
 /// API handler for Purchase Orders endpoints
@@ -547,7 +827,8 @@ impl PurchaseOrdersApi<'_> {
     /// Retrieve a list of purchase orders
     #[instrument(skip(self))]
     pub async fn list(&self) -> Result<Vec<PurchaseOrder>> {
-        let response: purchase_order::ListResponse = self.client.get(purchase_order::ENDPOINT, Vec::<String>::default()).await?;
+        let empty_vec: Vec<String> = Vec::new();
+        let response: purchase_order::ListResponse = self.client.get(purchase_order::ENDPOINT, &empty_vec).await?;
         Ok(response.purchase_orders)
     }
 
@@ -558,7 +839,8 @@ impl PurchaseOrdersApi<'_> {
             .and_then(|endpoint| endpoint.join(&purchase_order_id.to_string()))
             .map_err(|_| Error::InvalidEndpoint)?;
         let endpoint_str = endpoint.to_string();
-        let response: purchase_order::ListResponse = self.client.get(endpoint, Vec::<String>::default()).await?;
+        let empty_vec: Vec<String> = Vec::new();
+        let response: purchase_order::ListResponse = self.client.get(endpoint, &empty_vec).await?;
         response
             .purchase_orders
             .into_iter()
@@ -599,16 +881,88 @@ pub struct QuotesApi<'a> {
 }
 
 impl QuotesApi<'_> {
-    /// Retrieve a list of quotes
+    /// Retrieve a list of quotes with filters
+    #[instrument(skip(self, parameters))]
+    pub async fn list(&self, parameters: quote::ListParameters) -> Result<Vec<Quote>> {
+        quote::list(self.client, parameters).await
+    }
+
+    /// Retrieve a list of all quotes without filtering
     #[instrument(skip(self))]
-    pub async fn list(&self) -> Result<Vec<Quote>> {
-        quote::list(self.client).await
+    pub async fn list_all(&self) -> Result<Vec<Quote>> {
+        quote::list_all(self.client).await
     }
 
     /// Retrieve a single quote by ID
     #[instrument(skip(self))]
     pub async fn get(&self, quote_id: Uuid) -> Result<Quote> {
         quote::get(self.client, quote_id).await
+    }
+    
+    /// Create a new quote
+    #[instrument(skip(self, quote))]
+    pub async fn create(&self, quote: &quote::QuoteBuilder) -> Result<Quote> {
+        quote::create(self.client, quote).await
+    }
+    
+    /// Update or create a quote
+    #[instrument(skip(self, quote))]
+    pub async fn update_or_create(&self, quote: &quote::QuoteBuilder) -> Result<Quote> {
+        quote::update_or_create(self.client, quote).await
+    }
+    
+    /// Update a specific quote
+    #[instrument(skip(self, quote))]
+    pub async fn update(&self, quote_id: Uuid, quote: &quote::QuoteBuilder) -> Result<Quote> {
+        quote::update(self.client, quote_id, quote).await
+    }
+    
+    /// Get the history records for a quote
+    #[instrument(skip(self))]
+    pub async fn get_history(&self, quote_id: Uuid) -> Result<Vec<quote::HistoryRecord>> {
+        quote::get_history(self.client, quote_id).await
+    }
+    
+    /// Create a history record for a quote
+    #[instrument(skip(self))]
+    pub async fn create_history(&self, quote_id: Uuid, details: &str) -> Result<Vec<quote::HistoryRecord>> {
+        quote::create_history(self.client, quote_id, details).await
+    }
+    
+    /// Get a quote as PDF
+    #[instrument(skip(self))]
+    pub async fn get_pdf(&self, quote_id: Uuid) -> Result<Vec<u8>> {
+        quote::get_pdf(self.client, quote_id).await
+    }
+    
+    /// List all attachments for a quote
+    #[instrument(skip(self))]
+    pub async fn list_attachments(&self, quote_id: Uuid) -> Result<Vec<quote::Attachment>> {
+        quote::list_attachments(self.client, quote_id).await
+    }
+    
+    /// Get a specific attachment by ID
+    #[instrument(skip(self))]
+    pub async fn get_attachment(&self, quote_id: Uuid, attachment_id: Uuid) -> Result<Vec<u8>> {
+        quote::get_attachment(self.client, quote_id, attachment_id).await
+    }
+    
+    /// Get an attachment by filename
+    #[instrument(skip(self))]
+    pub async fn get_attachment_by_filename(&self, quote_id: Uuid, filename: &str) -> Result<Vec<u8>> {
+        quote::get_attachment_by_filename(self.client, quote_id, filename).await
+    }
+    
+    /// Upload an attachment to a quote
+    #[instrument(skip(self, attachment_content))]
+    pub async fn upload_attachment(&self, quote_id: Uuid, filename: &str, attachment_content: &[u8]) -> Result<quote::Attachment> {
+        quote::upload_attachment(self.client, quote_id, filename, attachment_content).await
+    }
+    
+    /// Update an existing attachment
+    #[instrument(skip(self, attachment_content))]
+    pub async fn update_attachment(&self, quote_id: Uuid, filename: &str, attachment_content: &[u8]) -> Result<quote::Attachment> {
+        quote::update_attachment(self.client, quote_id, filename, attachment_content).await
     }
 }
 
@@ -669,7 +1023,8 @@ impl EmployeesApi<'_> {
     /// Retrieve a list of employees
     #[instrument(skip(self))]
     pub async fn list(&self) -> Result<Vec<Employee>> {
-        let response: employee::ListResponse = self.client.get(employee::ENDPOINT, Vec::<String>::default()).await?;
+        let empty_vec: Vec<String> = Vec::new();
+        let response: employee::ListResponse = self.client.get(employee::ENDPOINT, &empty_vec).await?;
         Ok(response.employees)
     }
 }
@@ -696,7 +1051,8 @@ impl EarningsRatesApi<'_> {
             pay_items: PayItems,
         }
         
-        let response: ListResponse = self.client.get(earnings_rates::ENDPOINT, Vec::<String>::default()).await?;
+        let empty_vec: Vec<String> = Vec::new();
+        let response: ListResponse = self.client.get(earnings_rates::ENDPOINT, &empty_vec).await?;
         Ok(response.pay_items.earnings_rates)
     }
 }

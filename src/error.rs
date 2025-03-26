@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::time::Duration;
 
 use miette::Diagnostic;
 use oauth2::HttpClientError;
@@ -167,6 +168,19 @@ pub enum Error {
         help("Verify your OAuth2 configuration and credentials")
     )]
     OAuth2(oauth2::RequestTokenError<HttpClientError<reqwest::Error>, OAuth2ErrorResponse>),
+    
+    /// Rate limit exceeded (HTTP 429 Too Many Requests)
+    #[error("rate limit exceeded: retry after {retry_after:?}")]
+    #[diagnostic(
+        code(xero_rs::rate_limit_exceeded),
+        help("The Xero API rate limit has been exceeded. Wait and retry, or implement request throttling.")
+    )]
+    RateLimitExceeded {
+        retry_after: Option<Duration>,
+        status_code: reqwest::StatusCode,
+        url: String,
+        response_body: Option<String>,
+    },
 }
 
 impl From<reqwest::Error> for Error {

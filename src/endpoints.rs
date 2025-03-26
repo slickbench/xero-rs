@@ -54,6 +54,11 @@ impl XeroEndpoint {
         
         base.join(path).map_err(|_| Error::InvalidEndpoint)
     }
+    
+    /// Creates a custom endpoint from a full URL string
+    pub fn from_string(url: String) -> Self {
+        Self::Custom(vec![url])
+    }
 }
 
 impl fmt::Display for XeroEndpoint {
