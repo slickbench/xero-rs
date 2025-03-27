@@ -16,20 +16,30 @@ pub enum LineAmountType {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct LineItem {
-    #[serde(default)]
-    pub description: String,
-    pub quantity: Decimal,
-    pub unit_amount: Decimal,
-    pub item_code: Option<String>,
-    pub account_code: Option<String>,
     #[serde(rename = "LineItemID")]
-    pub line_item_id: Uuid,
+    pub id: Uuid,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quantity: Option<Decimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit_amount: Option<Decimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_code: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tax_type: Option<String>,
-    pub tax_amount: Decimal,
-    pub line_amount: Decimal,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tax_amount: Option<Decimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line_amount: Option<Decimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub discount_rate: Option<Decimal>,
-    // tracking
+    #[serde(default)]
+    pub tracking: Vec<serde_json::Value>,
+    #[serde(default)]
+    pub validation_errors: Vec<serde_json::Value>,
 }
 
 impl LineItem {
@@ -40,7 +50,7 @@ impl LineItem {
         builder.account_code = self.account_code;
         builder.tax_type = self.tax_type;
         builder.discount_rate = self.discount_rate;
-        builder.line_item_id = Some(self.line_item_id);
+        builder.id = Some(self.id);
 
         builder
     }
@@ -49,21 +59,27 @@ impl LineItem {
 #[derive(Default, Debug, Serialize, Clone)]
 #[serde(rename_all = "PascalCase")]
 pub struct Builder {
-    pub description: String,
-    pub quantity: Decimal,
-    pub unit_amount: Decimal,
-    pub item_code: Option<String>,
-    pub account_code: Option<String>,
-    pub tax_type: Option<String>,
-    pub discount_rate: Option<Decimal>,
-    // tracking
     #[serde(rename = "LineItemID")]
-    pub line_item_id: Option<Uuid>,
+    pub id: Option<Uuid>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quantity: Option<Decimal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unit_amount: Option<Decimal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub account_code: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tax_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub discount_rate: Option<Decimal>,
 }
 
 impl Builder {
     #[must_use]
-    pub fn new(description: String, quantity: Decimal, unit_amount: Decimal) -> Self {
+    pub fn new(description: Option<String>, quantity: Option<Decimal>, unit_amount: Option<Decimal>) -> Self {
         Builder {
             description,
             quantity,
