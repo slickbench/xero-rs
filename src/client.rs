@@ -6,7 +6,7 @@ use std::time::Duration;
 use oauth2::{
     AccessToken, AuthorizationCode, CsrfToken, HttpClientError, RefreshToken, TokenResponse,
 };
-use reqwest::{header, IntoUrl, Method, RequestBuilder, Response, StatusCode};
+use reqwest::{header, IntoUrl, Method, RequestBuilder, StatusCode};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tokio::time::sleep;
 use url::Url;
@@ -277,13 +277,6 @@ impl Client {
             .header(header::ACCEPT, "application/json")
     }
 
-    /// Update rate limit information from a response
-    fn update_rate_limits(&mut self, response: &Response) {
-        let rate_limits = RateLimitInfo::from_response_headers(response.headers());
-        self.rate_limit_info = rate_limits;
-        self.rate_limit_info.log_if_near_limit();
-    }
-    
     /// Get the current rate limit information
     pub fn rate_limit_info(&self) -> &RateLimitInfo {
         &self.rate_limit_info

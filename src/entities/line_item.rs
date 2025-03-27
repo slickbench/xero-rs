@@ -16,6 +16,7 @@ pub enum LineAmountType {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct LineItem {
+    #[serde(default)]
     pub description: String,
     pub quantity: Decimal,
     pub unit_amount: Decimal,
