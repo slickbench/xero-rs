@@ -565,6 +565,7 @@ impl Client {
             }
         };
 
+        tracing::trace!("Response text:\n{}", text);
         match status {
             StatusCode::NOT_FOUND => Err(Error::NotFound {
                 entity: entity_type,
