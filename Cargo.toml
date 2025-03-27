@@ -1,6 +1,6 @@
 [package]
 name = "xero-rs"
-version = "0.1.0-alpha.5"
+version = "0.1.0-alpha.6"
 edition = "2018"
 description = "A Xero API client library for Rust"
 license-file = "LICENSE"
