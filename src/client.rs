@@ -414,7 +414,7 @@ impl Client {
         data: &T,
     ) -> Result<R> {
         self.execute_with_retry(|| async {
-            trace!(?data, endpoint = ?endpoint, "making POST request with endpoint");
+            trace!(json = ?serde_json::to_string(data).unwrap(), endpoint = ?endpoint, "making POST request with endpoint");
             let url = endpoint.to_url()?;
             let response = self.build_request(Method::POST, url)
                 .json(data)
@@ -433,7 +433,7 @@ impl Client {
         data: &T,
     ) -> Result<R> {
         self.execute_with_retry(|| async {
-            trace!(endpoint = ?endpoint, "making PUT request with endpoint");
+            trace!(json = ?serde_json::to_string(data).unwrap(), endpoint = ?endpoint, "making PUT request with endpoint");
             let url = endpoint.to_url()?;
             let response = self.build_request(Method::PUT, url)
                 .json(data)

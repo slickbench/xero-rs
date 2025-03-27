@@ -81,9 +81,9 @@ async fn create_purchase_order() -> Result<()> {
     let quantity = dec!(3.00);
     let unit_amount = dec!(2.00);
     let line_items: Vec<line_item::Builder> = vec![line_item::Builder::new(
-        description.to_string(),
-        quantity,
-        unit_amount,
+        Some(description.to_string()),
+        Some(quantity),
+        Some(unit_amount),
     )];
 
     let po_builder = purchase_order::Builder::new(ContactIdentifier::ID(contact.contact_id), line_items);

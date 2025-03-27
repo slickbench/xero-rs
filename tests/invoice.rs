@@ -123,9 +123,9 @@ async fn create_update_invoice() -> Result<()> {
     
     // Create a line item
     let line_item = xero_rs::line_item::Builder {
-        description: "Test Invoice Item".to_string(),
-        quantity: Decimal::new(100, 2), // 1.00
-        unit_amount: Decimal::new(10000, 2), // 100.00
+        description: Some("Test Invoice Item".to_string()),
+        quantity: Some(Decimal::new(100, 2)), // 1.00
+        unit_amount: Some(Decimal::new(10000, 2)), // 100.00
         account_code: Some("200".to_string()),
         tax_type: Some("OUTPUT".to_string()),
         ..Default::default()
@@ -133,9 +133,9 @@ async fn create_update_invoice() -> Result<()> {
     
     // Create a copy for update
     let line_item_for_update = xero_rs::line_item::Builder {
-        description: "Test Invoice Item".to_string(),
-        quantity: Decimal::new(100, 2), // 1.00
-        unit_amount: Decimal::new(10000, 2), // 100.00
+        description: Some("Test Invoice Item".to_string()),
+        quantity: Some(Decimal::new(100, 2)), // 1.00
+        unit_amount: Some(Decimal::new(10000, 2)), // 100.00
         account_code: Some("200".to_string()),
         tax_type: Some("OUTPUT".to_string()),
         ..Default::default()
