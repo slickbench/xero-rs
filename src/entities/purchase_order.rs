@@ -1,11 +1,12 @@
-use time::{Date, OffsetDateTime};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use time::{Date, OffsetDateTime};
 use uuid::Uuid;
 
 use crate::{
-    contact::Contact,
-    line_item::{self, LineAmountType, LineItem},
+    contact::{Contact, ContactIdentifier},
+    entities::line_item,
+    line_item::{LineAmountType, LineItem},
     utils::date_format::{xero_date_format, xero_date_format_option, xero_datetime_format},
 };
 
@@ -62,14 +63,6 @@ pub(crate) struct ListResponse {
     pub purchase_orders: Vec<PurchaseOrder>,
 }
 
-#[derive(Debug, Serialize)]
-pub enum ContactIdentifier {
-    #[serde(rename = "ContactID")]
-    ID(Uuid),
-    #[serde(rename = "ContactNumber")]
-    Number(String),
-}
-
 impl Default for ContactIdentifier {
     fn default() -> Self {
         Self::ID(Uuid::new_v4())
@@ -81,9 +74,15 @@ impl Default for ContactIdentifier {
 pub struct Builder {
     pub contact: ContactIdentifier,
     pub line_items: Vec<line_item::Builder>,
-    #[serde(with = "xero_date_format_option", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        with = "xero_date_format_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub date: Option<Date>,
-    #[serde(with = "xero_date_format_option", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        with = "xero_date_format_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub delivery_date: Option<Date>,
     pub line_amount_types: Option<LineAmountType>,
     pub purchase_order_number: Option<String>,
@@ -97,7 +96,10 @@ pub struct Builder {
     pub attention_to: Option<String>,
     pub telephone: Option<String>,
     pub delivery_instructions: Option<String>,
-    #[serde(with = "xero_date_format_option", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        with = "xero_date_format_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub expected_arrival_date: Option<Date>,
     #[serde(rename = "PurchaseOrderID")]
     pub purchase_order_id: Option<Uuid>,

@@ -1,4 +1,5 @@
-use serde::{Deserialize, Serialize};
+use serde::ser::SerializeMap;
+use serde::{Deserialize, Serialize, Serializer};
 use uuid::Uuid;
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -7,6 +8,38 @@ pub enum Status {
     Active,
     Archived,
     GdprRequest,
+}
+/// A contact identifier used for referencing a contact in documents
+/// like invoices and quotes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ContactIdentifier {
+    /// Identify the contact by its Xero ID
+    ID(Uuid),
+    /// Identify the contact by its number
+    Number(String),
+    /// Identify the contact by its name
+    Name(String),
+}
+
+impl Serialize for ContactIdentifier {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut map = serializer.serialize_map(Some(1))?;
+        match self {
+            ContactIdentifier::ID(id) => {
+                map.serialize_entry("ContactID", id)?;
+            }
+            ContactIdentifier::Number(number) => {
+                map.serialize_entry("ContactNumber", number)?;
+            }
+            ContactIdentifier::Name(name) => {
+                map.serialize_entry("ContactName", name)?;
+            }
+        }
+        map.end()
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -6,7 +6,7 @@ use time::Date;
 use uuid::Uuid;
 
 use crate::{
-    contact::Contact,
+    contact::{Contact, ContactIdentifier},
     endpoints::XeroEndpoint,
     entities::{endpoint_utils, EntityEndpoint, MutationResponse},
     error::{Error, Result},
@@ -73,19 +73,35 @@ impl From<ListResponse> for Vec<Quote> {
 #[derive(Debug, Serialize, Default)]
 pub struct ListParameters {
     /// Filter for quotes after a particular date
-    #[serde(rename = "DateFrom", skip_serializing_if = "Option::is_none", with = "xero_date_format_option")]
+    #[serde(
+        rename = "DateFrom",
+        skip_serializing_if = "Option::is_none",
+        with = "xero_date_format_option"
+    )]
     pub date_from: Option<Date>,
 
     /// Filter for quotes before a particular date
-    #[serde(rename = "DateTo", skip_serializing_if = "Option::is_none", with = "xero_date_format_option")]
+    #[serde(
+        rename = "DateTo",
+        skip_serializing_if = "Option::is_none",
+        with = "xero_date_format_option"
+    )]
     pub date_to: Option<Date>,
 
     /// Filter for quotes expiring after a particular date
-    #[serde(rename = "ExpiryDateFrom", skip_serializing_if = "Option::is_none", with = "xero_date_format_option")]
+    #[serde(
+        rename = "ExpiryDateFrom",
+        skip_serializing_if = "Option::is_none",
+        with = "xero_date_format_option"
+    )]
     pub expiry_date_from: Option<Date>,
 
     /// Filter for quotes expiring before a particular date
-    #[serde(rename = "ExpiryDateTo", skip_serializing_if = "Option::is_none", with = "xero_date_format_option")]
+    #[serde(
+        rename = "ExpiryDateTo",
+        skip_serializing_if = "Option::is_none",
+        with = "xero_date_format_option"
+    )]
     pub expiry_date_to: Option<Date>,
 
     /// Filter for quotes belonging to a particular contact
@@ -185,50 +201,53 @@ impl ListParameters {
 #[serde(rename_all = "PascalCase")]
 pub struct QuoteBuilder {
     /// The contact the quote is for
-    pub contact: Contact,
-    
+    pub contact: ContactIdentifier,
+
     /// The quote date
     #[serde(with = "xero_date_format")]
     pub date: Date,
-    
+
     /// The quote's expiry date
-    #[serde(with = "xero_date_format_option", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        with = "xero_date_format_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub expiry_date: Option<Date>,
-    
+
     /// Line items for the quote
     pub line_items: Vec<LineItem>,
-    
+
     /// Tax calculation type
     pub line_amount_types: LineAmountType,
-    
+
     /// Quote title
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
-    
+
     /// Quote summary
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
-    
+
     /// Quote terms
     #[serde(skip_serializing_if = "Option::is_none")]
     pub terms: Option<String>,
-    
+
     /// Quote reference
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reference: Option<String>,
-    
+
     /// The quote's currency code
     #[serde(skip_serializing_if = "Option::is_none")]
     pub currency_code: Option<String>,
-    
+
     /// The quote's branding theme ID
     #[serde(rename = "BrandingThemeID", skip_serializing_if = "Option::is_none")]
     pub branding_theme_id: Option<Uuid>,
-    
+
     /// The quote's ID (used for updates)
     #[serde(rename = "QuoteID", skip_serializing_if = "Option::is_none")]
     pub quote_id: Option<Uuid>,
-    
+
     /// The quote's status
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<Status>,
@@ -247,15 +266,15 @@ pub(crate) struct QuoteWrapper<'a> {
 pub struct HistoryRecord {
     /// The details of the history record
     pub details: String,
-    
+
     /// The date and time of the history record
     #[serde(skip_serializing_if = "Option::is_none")]
     pub date_utc: Option<String>,
-    
+
     /// The user who created the history record
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
-    
+
     /// The changes made
     #[serde(skip_serializing_if = "Option::is_none")]
     pub changes: Option<String>,
@@ -324,27 +343,18 @@ pub async fn list_all(client: &Client) -> Result<Vec<Quote>> {
 /// Retrieve a single quote by ID
 #[instrument(skip(client))]
 pub async fn get(client: &Client, quote_id: Uuid) -> Result<Quote> {
-    let endpoint = XeroEndpoint::Custom(vec![
-        "Quotes".to_string(),
-        quote_id.to_string(),
-    ]);
-    
+    let endpoint = XeroEndpoint::Custom(vec!["Quotes".to_string(), quote_id.to_string()]);
+
     let endpoint_clone = endpoint.clone();
     let empty_tuple = ();
-    let response: ListResponse = client
-        .get_endpoint(endpoint, &empty_tuple)
-        .await?;
-    
-    response
-        .quotes
-        .into_iter()
-        .next()
-        .ok_or(Error::NotFound {
-            entity: "Quote".to_string(),
-            url: endpoint_clone.to_string(),
-            status_code: reqwest::StatusCode::NOT_FOUND,
-            response_body: Some(format!("Quote with ID {quote_id} not found")),
-        })
+    let response: ListResponse = client.get_endpoint(endpoint, &empty_tuple).await?;
+
+    response.quotes.into_iter().next().ok_or(Error::NotFound {
+        entity: "Quote".to_string(),
+        url: endpoint_clone.to_string(),
+        status_code: reqwest::StatusCode::NOT_FOUND,
+        response_body: Some(format!("Quote with ID {quote_id} not found")),
+    })
 }
 
 /// Create one or more quotes.
@@ -354,9 +364,7 @@ pub async fn create(client: &Client, quote: &QuoteBuilder) -> Result<Quote> {
         quotes: vec![quote],
     };
 
-    let response: MutationResponse = client
-        .put_endpoint(XeroEndpoint::Quotes, &request)
-        .await?;
+    let response: MutationResponse = client.put_endpoint(XeroEndpoint::Quotes, &request).await?;
 
     // Extract quote from response
     response
@@ -378,9 +386,7 @@ pub async fn update_or_create(client: &Client, quote: &QuoteBuilder) -> Result<Q
         quotes: vec![quote],
     };
 
-    let response: MutationResponse = client
-        .post_endpoint(XeroEndpoint::Quotes, &request)
-        .await?;
+    let response: MutationResponse = client.post_endpoint(XeroEndpoint::Quotes, &request).await?;
 
     // Extract quote from response
     response
@@ -406,9 +412,7 @@ pub async fn update(client: &Client, quote_id: Uuid, quote: &QuoteBuilder) -> Re
     };
 
     let endpoint = XeroEndpoint::Quote(quote_id);
-    let response: MutationResponse = client
-        .post_endpoint(endpoint.clone(), &request)
-        .await?;
+    let response: MutationResponse = client.post_endpoint(endpoint.clone(), &request).await?;
 
     // Extract quote from response
     response
@@ -431,39 +435,39 @@ pub async fn get_history(client: &Client, quote_id: Uuid) -> Result<Vec<HistoryR
         quote_id.to_string(),
         "History".to_string(),
     ]);
-    
+
     let empty_tuple = ();
-    let response: HistoryRecords = client
-        .get_endpoint(endpoint, &empty_tuple)
-        .await?;
-    
+    let response: HistoryRecords = client.get_endpoint(endpoint, &empty_tuple).await?;
+
     Ok(response.history_records)
 }
 
 /// Create a history record for a specific quote.
 #[instrument(skip(client))]
-pub async fn create_history(client: &Client, quote_id: Uuid, details: &str) -> Result<Vec<HistoryRecord>> {
+pub async fn create_history(
+    client: &Client,
+    quote_id: Uuid,
+    details: &str,
+) -> Result<Vec<HistoryRecord>> {
     let endpoint = XeroEndpoint::Custom(vec![
         "Quotes".to_string(),
         quote_id.to_string(),
         "History".to_string(),
     ]);
-    
+
     let history_record = HistoryRecord {
         details: details.to_string(),
         date_utc: None,
         user: None,
         changes: None,
     };
-    
+
     let request = HistoryRecordsRequest {
         history_records: vec![history_record],
     };
-    
-    let response: HistoryRecords = client
-        .put_endpoint(endpoint, &request)
-        .await?;
-    
+
+    let response: HistoryRecords = client.put_endpoint(endpoint, &request).await?;
+
     Ok(response.history_records)
 }
 
@@ -475,15 +479,15 @@ pub async fn get_pdf(client: &Client, quote_id: Uuid) -> Result<Vec<u8>> {
         quote_id.to_string(),
         "pdf".to_string(),
     ]);
-    
+
     let url = endpoint.to_url()?;
     let response = client
         .build_request(reqwest::Method::GET, url)
         .send()
         .await?;
-    
+
     let status = response.status();
-    
+
     if status.is_success() {
         Ok(response.bytes().await?.to_vec())
     } else {
@@ -491,7 +495,9 @@ pub async fn get_pdf(client: &Client, quote_id: Uuid) -> Result<Vec<u8>> {
             entity: "Quote PDF".to_string(),
             url: endpoint.to_string(),
             status_code: status,
-            response_body: Some(format!("Failed to retrieve PDF for quote with ID {quote_id}")),
+            response_body: Some(format!(
+                "Failed to retrieve PDF for quote with ID {quote_id}"
+            )),
         })
     }
 }
@@ -504,33 +510,35 @@ pub async fn list_attachments(client: &Client, quote_id: Uuid) -> Result<Vec<Att
         quote_id.to_string(),
         "Attachments".to_string(),
     ]);
-    
+
     let empty_tuple = ();
-    let response: Attachments = client
-        .get_endpoint(endpoint, &empty_tuple)
-        .await?;
-    
+    let response: Attachments = client.get_endpoint(endpoint, &empty_tuple).await?;
+
     Ok(response.attachments)
 }
 
 /// Get a specific attachment by ID.
 #[instrument(skip(client))]
-pub async fn get_attachment(client: &Client, quote_id: Uuid, attachment_id: Uuid) -> Result<Vec<u8>> {
+pub async fn get_attachment(
+    client: &Client,
+    quote_id: Uuid,
+    attachment_id: Uuid,
+) -> Result<Vec<u8>> {
     let endpoint = XeroEndpoint::Custom(vec![
         "Quotes".to_string(),
         quote_id.to_string(),
         "Attachments".to_string(),
         attachment_id.to_string(),
     ]);
-    
+
     let url = endpoint.to_url()?;
     let response = client
         .build_request(reqwest::Method::GET, url)
         .send()
         .await?;
-    
+
     let status = response.status();
-    
+
     if status.is_success() {
         Ok(response.bytes().await?.to_vec())
     } else {
@@ -538,29 +546,35 @@ pub async fn get_attachment(client: &Client, quote_id: Uuid, attachment_id: Uuid
             entity: "Quote Attachment".to_string(),
             url: endpoint.to_string(),
             status_code: status,
-            response_body: Some(format!("Failed to retrieve attachment for quote with ID {quote_id}")),
+            response_body: Some(format!(
+                "Failed to retrieve attachment for quote with ID {quote_id}"
+            )),
         })
     }
 }
 
 /// Get an attachment by filename.
 #[instrument(skip(client))]
-pub async fn get_attachment_by_filename(client: &Client, quote_id: Uuid, filename: &str) -> Result<Vec<u8>> {
+pub async fn get_attachment_by_filename(
+    client: &Client,
+    quote_id: Uuid,
+    filename: &str,
+) -> Result<Vec<u8>> {
     let endpoint = XeroEndpoint::Custom(vec![
         "Quotes".to_string(),
         quote_id.to_string(),
         "Attachments".to_string(),
         filename.to_string(),
     ]);
-    
+
     let url = endpoint.to_url()?;
     let response = client
         .build_request(reqwest::Method::GET, url)
         .send()
         .await?;
-    
+
     let status = response.status();
-    
+
     if status.is_success() {
         Ok(response.bytes().await?.to_vec())
     } else {
@@ -568,7 +582,10 @@ pub async fn get_attachment_by_filename(client: &Client, quote_id: Uuid, filenam
             entity: "Quote Attachment".to_string(),
             url: endpoint.to_string(),
             status_code: status,
-            response_body: Some(format!("Failed to retrieve attachment {} for quote with ID {quote_id}", filename)),
+            response_body: Some(format!(
+                "Failed to retrieve attachment {} for quote with ID {quote_id}",
+                filename
+            )),
         })
     }
 }
@@ -590,9 +607,7 @@ pub async fn upload_attachment(
     }
 
     // 2. Determine content type from filename extension
-    let ext = Path::new(filename)
-        .extension()
-        .and_then(OsStr::to_str);
+    let ext = Path::new(filename).extension().and_then(OsStr::to_str);
 
     let content_type = match ext {
         Some("pdf") => "application/pdf",
@@ -612,12 +627,12 @@ pub async fn upload_attachment(
 
     // Create the endpoint URL using XeroEndpoint
     let endpoint = XeroEndpoint::Custom(vec![
-        "Quotes".to_string(), 
-        quote_id.to_string(), 
-        "Attachments".to_string(), 
-        filename.to_string()
+        "Quotes".to_string(),
+        quote_id.to_string(),
+        "Attachments".to_string(),
+        filename.to_string(),
     ]);
-    
+
     let url = endpoint.to_url()?;
     let response = client
         .build_request(reqwest::Method::PUT, url)
@@ -626,23 +641,29 @@ pub async fn upload_attachment(
         .body(attachment_content.to_vec())
         .send()
         .await?;
-    
+
     let status = response.status();
-    
+
     if status.is_success() {
         let attachments: Attachments = response.json().await?;
-        attachments.attachments.into_iter().next().ok_or(Error::NotFound {
-            entity: "Quote Attachment".to_string(),
-            url: endpoint.to_string(),
-            status_code: status,
-            response_body: Some("No attachment was returned after upload".to_string()),
-        })
+        attachments
+            .attachments
+            .into_iter()
+            .next()
+            .ok_or(Error::NotFound {
+                entity: "Quote Attachment".to_string(),
+                url: endpoint.to_string(),
+                status_code: status,
+                response_body: Some("No attachment was returned after upload".to_string()),
+            })
     } else {
         Err(Error::NotFound {
             entity: "Quote Attachment".to_string(),
             url: endpoint.to_string(),
             status_code: status,
-            response_body: Some(format!("Failed to upload attachment for quote with ID {quote_id}")),
+            response_body: Some(format!(
+                "Failed to upload attachment for quote with ID {quote_id}"
+            )),
         })
     }
 }
@@ -664,9 +685,7 @@ pub async fn update_attachment(
     }
 
     // 2. Determine content type from filename extension
-    let ext = Path::new(filename)
-        .extension()
-        .and_then(OsStr::to_str);
+    let ext = Path::new(filename).extension().and_then(OsStr::to_str);
 
     let content_type = match ext {
         Some("pdf") => "application/pdf",
@@ -686,12 +705,12 @@ pub async fn update_attachment(
 
     // Create the endpoint URL using XeroEndpoint
     let endpoint = XeroEndpoint::Custom(vec![
-        "Quotes".to_string(), 
-        quote_id.to_string(), 
-        "Attachments".to_string(), 
-        filename.to_string()
+        "Quotes".to_string(),
+        quote_id.to_string(),
+        "Attachments".to_string(),
+        filename.to_string(),
     ]);
-    
+
     let url = endpoint.to_url()?;
     let response = client
         .build_request(reqwest::Method::POST, url)
@@ -700,23 +719,29 @@ pub async fn update_attachment(
         .body(attachment_content.to_vec())
         .send()
         .await?;
-    
+
     let status = response.status();
-    
+
     if status.is_success() {
         let attachments: Attachments = response.json().await?;
-        attachments.attachments.into_iter().next().ok_or(Error::NotFound {
-            entity: "Quote Attachment".to_string(),
-            url: endpoint.to_string(),
-            status_code: status,
-            response_body: Some("No attachment was returned after update".to_string()),
-        })
+        attachments
+            .attachments
+            .into_iter()
+            .next()
+            .ok_or(Error::NotFound {
+                entity: "Quote Attachment".to_string(),
+                url: endpoint.to_string(),
+                status_code: status,
+                response_body: Some("No attachment was returned after update".to_string()),
+            })
     } else {
         Err(Error::NotFound {
             entity: "Quote Attachment".to_string(),
             url: endpoint.to_string(),
             status_code: status,
-            response_body: Some(format!("Failed to update attachment for quote with ID {quote_id}")),
+            response_body: Some(format!(
+                "Failed to update attachment for quote with ID {quote_id}"
+            )),
         })
     }
 }

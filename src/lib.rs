@@ -13,9 +13,12 @@ pub mod payroll;
 pub mod scope;
 pub mod utils;
 
-pub use error::Error;
 pub use client::Client;
 pub use endpoints::XeroEndpoint;
 pub use entities::*;
+pub use error::Error;
 pub use oauth::KeyPair;
 pub use scope::{Permission, Scope, ScopeCategory, ScopeType};
+
+// Re-export LineAmountType
+pub use entities::line_item::LineAmountType as line_amount_types;

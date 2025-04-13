@@ -1,23 +1,23 @@
-use std::{path::Path, ffi::OsStr};
+use std::{ffi::OsStr, path::Path};
 
-use time::{Date, OffsetDateTime};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use time::{Date, OffsetDateTime};
 use url::Url;
 use uuid::Uuid;
 
 use crate::{
-    contact::Contact,
+    contact::{Contact, ContactIdentifier},
     endpoints::XeroEndpoint,
     entities::{endpoint_utils, EntityEndpoint, MutationResponse},
     error::{Error, Result},
     line_item::{LineAmountType, LineItem},
-    Client,
     utils::date_format::{xero_date_format, xero_date_format_option, xero_datetime_format},
+    Client,
 };
 
-use super::{line_item};
+use super::line_item;
 
 pub const ENDPOINT: &str = "https://api.xero.com/api.xro/2.0/Invoices/";
 
@@ -143,9 +143,17 @@ pub struct Invoice {
     pub branding_theme_id: Option<Uuid>,
     pub url: Option<Url>,
     pub sent_to_contact: Option<bool>,
-    #[serde(with = "xero_date_format_option", skip_serializing_if = "Option::is_none", default)]
+    #[serde(
+        with = "xero_date_format_option",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
     pub expected_payment_date: Option<Date>,
-    #[serde(with = "xero_date_format_option", skip_serializing_if = "Option::is_none", default)]
+    #[serde(
+        with = "xero_date_format_option",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
     pub planned_payment_date: Option<Date>,
     #[serde(default)]
     pub has_attachments: bool,
@@ -165,7 +173,11 @@ pub struct Invoice {
     pub cis_deduction: Option<String>,
     #[serde(rename = "CISRate")]
     pub cis_rate: Option<Decimal>,
-    #[serde(with = "xero_date_format_option", skip_serializing_if = "Option::is_none", default)]
+    #[serde(
+        with = "xero_date_format_option",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
     pub fully_paid_on_date: Option<Date>,
     #[serde(default)]
     pub amount_credited: Option<Decimal>,
@@ -209,21 +221,37 @@ impl From<ListResponse> for Vec<Invoice> {
 pub struct ListParameters {
     #[serde(rename = "where", skip_serializing_if = "Option::is_none")]
     pub r#where: Option<String>,
-    
+
     /// Filter for invoices after a particular date
-    #[serde(rename = "DateFrom", skip_serializing_if = "Option::is_none", with = "xero_date_format_option")]
+    #[serde(
+        rename = "DateFrom",
+        skip_serializing_if = "Option::is_none",
+        with = "xero_date_format_option"
+    )]
     pub date_from: Option<Date>,
 
     /// Filter for invoices before a particular date
-    #[serde(rename = "DateTo", skip_serializing_if = "Option::is_none", with = "xero_date_format_option")]
+    #[serde(
+        rename = "DateTo",
+        skip_serializing_if = "Option::is_none",
+        with = "xero_date_format_option"
+    )]
     pub date_to: Option<Date>,
 
     /// Filter for invoices due after a particular date
-    #[serde(rename = "DueDateFrom", skip_serializing_if = "Option::is_none", with = "xero_date_format_option")]
+    #[serde(
+        rename = "DueDateFrom",
+        skip_serializing_if = "Option::is_none",
+        with = "xero_date_format_option"
+    )]
     pub due_date_from: Option<Date>,
 
     /// Filter for invoices due before a particular date
-    #[serde(rename = "DueDateTo", skip_serializing_if = "Option::is_none", with = "xero_date_format_option")]
+    #[serde(
+        rename = "DueDateTo",
+        skip_serializing_if = "Option::is_none",
+        with = "xero_date_format_option"
+    )]
     pub due_date_to: Option<Date>,
 
     /// Filter for invoices belonging to a particular contact
@@ -245,15 +273,15 @@ pub struct ListParameters {
     /// Filter by invoice number
     #[serde(rename = "InvoiceNumber", skip_serializing_if = "Option::is_none")]
     pub invoice_number: Option<String>,
-    
+
     /// Include archived invoices
     #[serde(rename = "includeArchived", skip_serializing_if = "Option::is_none")]
     pub include_archived: Option<bool>,
-    
+
     /// Only include invoices created by this app
     #[serde(rename = "createdByMyApp", skip_serializing_if = "Option::is_none")]
     pub created_by_my_app: Option<bool>,
-    
+
     /// Filter by a comma-separated list of invoice IDs
     #[serde(rename = "IDs", skip_serializing_if = "Option::is_none")]
     pub ids: Option<String>,
@@ -328,21 +356,21 @@ impl ListParameters {
         self.invoice_number = Some(number.into());
         self
     }
-    
+
     /// Set the include_archived filter
     #[must_use]
     pub fn with_include_archived(mut self, include: bool) -> Self {
         self.include_archived = Some(include);
         self
     }
-    
+
     /// Set the created_by_my_app filter
     #[must_use]
     pub fn with_created_by_my_app(mut self, created_by_my_app: bool) -> Self {
         self.created_by_my_app = Some(created_by_my_app);
         self
     }
-    
+
     /// Set the ids filter with a list of invoice IDs
     #[must_use]
     pub fn with_ids(mut self, ids: Vec<Uuid>) -> Self {
@@ -356,20 +384,6 @@ impl ListParameters {
     }
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
-pub enum ContactIdentifier {
-    #[serde(rename = "ContactID")]
-    ID(Uuid),
-    #[serde(rename = "ContactNumber")]
-    Number(String),
-}
-
-impl Default for ContactIdentifier {
-    fn default() -> Self {
-        Self::ID(Uuid::new_v4())
-    }
-}
-
 #[derive(Default, Debug, Serialize, Clone)]
 #[serde(rename_all = "PascalCase")]
 pub struct Builder {
@@ -377,9 +391,15 @@ pub struct Builder {
     pub r#type: Type,
     pub contact: ContactIdentifier,
     pub line_items: Vec<line_item::Builder>,
-    #[serde(with = "xero_date_format_option", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        with = "xero_date_format_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub date: Option<Date>,
-    #[serde(with = "xero_date_format_option", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        with = "xero_date_format_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub due_date: Option<Date>,
     pub line_amount_types: Option<LineAmountType>,
     pub invoice_number: Option<String>,
@@ -391,9 +411,15 @@ pub struct Builder {
     pub currency_rate: Option<Decimal>,
     pub status: Option<Status>,
     pub sent_to_contact: Option<bool>,
-    #[serde(with = "xero_date_format_option", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        with = "xero_date_format_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub expected_payment_date: Option<Date>,
-    #[serde(with = "xero_date_format_option", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        with = "xero_date_format_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub planned_payment_date: Option<Date>,
     #[serde(rename = "InvoiceID", skip_serializing_if = "Option::is_none")]
     pub invoice_id: Option<Uuid>,
@@ -428,15 +454,15 @@ impl Builder {
 pub struct HistoryRecord {
     /// The details of the history record
     pub details: String,
-    
+
     /// The date and time of the history record
     #[serde(skip_serializing_if = "Option::is_none")]
     pub date_utc: Option<String>,
-    
+
     /// The user who created the history record
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
-    
+
     /// The changes made
     #[serde(skip_serializing_if = "Option::is_none")]
     pub changes: Option<String>,
@@ -557,9 +583,7 @@ pub async fn update(client: &Client, invoice_id: Uuid, invoice: &Builder) -> Res
     };
 
     let endpoint = XeroEndpoint::Invoice(invoice_id);
-    let response: MutationResponse = client
-        .post_endpoint(endpoint.clone(), &request)
-        .await?;
+    let response: MutationResponse = client.post_endpoint(endpoint.clone(), &request).await?;
 
     // Extract invoice from response
     response
@@ -606,15 +630,15 @@ pub async fn get_pdf(client: &Client, invoice_id: Uuid) -> Result<Vec<u8>> {
         invoice_id.to_string(),
         "pdf".to_string(),
     ]);
-    
+
     let url = endpoint.to_url()?;
     let response = client
         .build_request(reqwest::Method::GET, url)
         .send()
         .await?;
-    
+
     let status = response.status();
-    
+
     if status.is_success() {
         Ok(response.bytes().await?.to_vec())
     } else {
@@ -622,16 +646,19 @@ pub async fn get_pdf(client: &Client, invoice_id: Uuid) -> Result<Vec<u8>> {
             entity: "Invoice PDF".to_string(),
             url: endpoint.to_string(),
             status_code: status,
-            response_body: Some(format!("Failed to retrieve PDF for invoice with ID {invoice_id}")),
+            response_body: Some(format!(
+                "Failed to retrieve PDF for invoice with ID {invoice_id}"
+            )),
         })
     }
 }
 
 /// Get the online invoice URL
 pub async fn get_online_invoice(client: &Client, invoice_id: Uuid) -> Result<String> {
-    let endpoint = XeroEndpoint::from_string(
-        format!("https://api.xero.com/api.xro/2.0/Invoices/{}/OnlineInvoice", invoice_id)
-    );
+    let endpoint = XeroEndpoint::from_string(format!(
+        "https://api.xero.com/api.xro/2.0/Invoices/{}/OnlineInvoice",
+        invoice_id
+    ));
     let empty_tuple = ();
     let response: OnlineInvoices = client.get_endpoint(endpoint, &empty_tuple).await?;
     Ok(response.online_invoices[0].online_invoice_url.clone())
@@ -645,22 +672,21 @@ pub async fn email(client: &Client, invoice_id: Uuid) -> Result<()> {
         invoice_id.to_string(),
         "Email".to_string(),
     ]);
-    
+
     // Empty request body
     let empty_request = serde_json::json!({});
-    
-    let _: serde_json::Value = client
-        .post_endpoint(endpoint, &empty_request)
-        .await?;
-    
+
+    let _: serde_json::Value = client.post_endpoint(endpoint, &empty_request).await?;
+
     Ok(())
 }
 
 /// Get history records for an invoice
 pub async fn get_history(client: &Client, invoice_id: Uuid) -> Result<Vec<HistoryRecord>> {
-    let endpoint = XeroEndpoint::from_string(
-        format!("https://api.xero.com/api.xro/2.0/Invoices/{}/history", invoice_id)
-    );
+    let endpoint = XeroEndpoint::from_string(format!(
+        "https://api.xero.com/api.xro/2.0/Invoices/{}/history",
+        invoice_id
+    ));
     let empty_tuple = ();
     let response: HistoryRecords = client.get_endpoint(endpoint, &empty_tuple).await?;
     Ok(response.history_records)
@@ -668,36 +694,39 @@ pub async fn get_history(client: &Client, invoice_id: Uuid) -> Result<Vec<Histor
 
 /// Create a history record for a specific invoice.
 #[instrument(skip(client))]
-pub async fn create_history(client: &Client, invoice_id: Uuid, details: &str) -> Result<Vec<HistoryRecord>> {
+pub async fn create_history(
+    client: &Client,
+    invoice_id: Uuid,
+    details: &str,
+) -> Result<Vec<HistoryRecord>> {
     let endpoint = XeroEndpoint::Custom(vec![
         "Invoices".to_string(),
         invoice_id.to_string(),
         "History".to_string(),
     ]);
-    
+
     let history_record = HistoryRecord {
         details: details.to_string(),
         date_utc: None,
         user: None,
         changes: None,
     };
-    
+
     let request = HistoryRecordsRequest {
         history_records: vec![history_record],
     };
-    
-    let response: HistoryRecords = client
-        .put_endpoint(endpoint, &request)
-        .await?;
-    
+
+    let response: HistoryRecords = client.put_endpoint(endpoint, &request).await?;
+
     Ok(response.history_records)
 }
 
 /// List attachments for an invoice
 pub async fn list_attachments(client: &Client, invoice_id: Uuid) -> Result<Vec<Attachment>> {
-    let endpoint = XeroEndpoint::from_string(
-        format!("https://api.xero.com/api.xro/2.0/Invoices/{}/Attachments", invoice_id)
-    );
+    let endpoint = XeroEndpoint::from_string(format!(
+        "https://api.xero.com/api.xro/2.0/Invoices/{}/Attachments",
+        invoice_id
+    ));
     let empty_tuple = ();
     let response: Attachments = client.get_endpoint(endpoint, &empty_tuple).await?;
     Ok(response.attachments)
@@ -705,22 +734,26 @@ pub async fn list_attachments(client: &Client, invoice_id: Uuid) -> Result<Vec<A
 
 /// Get a specific attachment by ID.
 #[instrument(skip(client))]
-pub async fn get_attachment(client: &Client, invoice_id: Uuid, attachment_id: Uuid) -> Result<Vec<u8>> {
+pub async fn get_attachment(
+    client: &Client,
+    invoice_id: Uuid,
+    attachment_id: Uuid,
+) -> Result<Vec<u8>> {
     let endpoint = XeroEndpoint::Custom(vec![
         "Invoices".to_string(),
         invoice_id.to_string(),
         "Attachments".to_string(),
         attachment_id.to_string(),
     ]);
-    
+
     let url = endpoint.to_url()?;
     let response = client
         .build_request(reqwest::Method::GET, url)
         .send()
         .await?;
-    
+
     let status = response.status();
-    
+
     if status.is_success() {
         Ok(response.bytes().await?.to_vec())
     } else {
@@ -728,29 +761,35 @@ pub async fn get_attachment(client: &Client, invoice_id: Uuid, attachment_id: Uu
             entity: "Invoice Attachment".to_string(),
             url: endpoint.to_string(),
             status_code: status,
-            response_body: Some(format!("Failed to retrieve attachment for invoice with ID {invoice_id}")),
+            response_body: Some(format!(
+                "Failed to retrieve attachment for invoice with ID {invoice_id}"
+            )),
         })
     }
 }
 
 /// Get an attachment by filename.
 #[instrument(skip(client))]
-pub async fn get_attachment_by_filename(client: &Client, invoice_id: Uuid, filename: &str) -> Result<Vec<u8>> {
+pub async fn get_attachment_by_filename(
+    client: &Client,
+    invoice_id: Uuid,
+    filename: &str,
+) -> Result<Vec<u8>> {
     let endpoint = XeroEndpoint::Custom(vec![
         "Invoices".to_string(),
         invoice_id.to_string(),
         "Attachments".to_string(),
         filename.to_string(),
     ]);
-    
+
     let url = endpoint.to_url()?;
     let response = client
         .build_request(reqwest::Method::GET, url)
         .send()
         .await?;
-    
+
     let status = response.status();
-    
+
     if status.is_success() {
         Ok(response.bytes().await?.to_vec())
     } else {
@@ -758,7 +797,10 @@ pub async fn get_attachment_by_filename(client: &Client, invoice_id: Uuid, filen
             entity: "Invoice Attachment".to_string(),
             url: endpoint.to_string(),
             status_code: status,
-            response_body: Some(format!("Failed to retrieve attachment {} for invoice with ID {invoice_id}", filename)),
+            response_body: Some(format!(
+                "Failed to retrieve attachment {} for invoice with ID {invoice_id}",
+                filename
+            )),
         })
     }
 }
@@ -780,9 +822,7 @@ pub async fn upload_attachment(
     }
 
     // 2. Determine content type from filename extension
-    let ext = Path::new(filename)
-        .extension()
-        .and_then(OsStr::to_str);
+    let ext = Path::new(filename).extension().and_then(OsStr::to_str);
 
     let content_type = match ext {
         Some("pdf") => "application/pdf",
@@ -802,12 +842,12 @@ pub async fn upload_attachment(
 
     // Create the endpoint URL using XeroEndpoint
     let endpoint = XeroEndpoint::Custom(vec![
-        "Invoices".to_string(), 
-        invoice_id.to_string(), 
-        "Attachments".to_string(), 
-        filename.to_string()
+        "Invoices".to_string(),
+        invoice_id.to_string(),
+        "Attachments".to_string(),
+        filename.to_string(),
     ]);
-    
+
     let url = endpoint.to_url()?;
     let response = client
         .build_request(reqwest::Method::PUT, url)
@@ -816,23 +856,29 @@ pub async fn upload_attachment(
         .body(attachment_content.to_vec())
         .send()
         .await?;
-    
+
     let status = response.status();
-    
+
     if status.is_success() {
         let attachments: Attachments = response.json().await?;
-        attachments.attachments.into_iter().next().ok_or(Error::NotFound {
-            entity: "Invoice Attachment".to_string(),
-            url: endpoint.to_string(),
-            status_code: status,
-            response_body: Some("No attachment was returned after upload".to_string()),
-        })
+        attachments
+            .attachments
+            .into_iter()
+            .next()
+            .ok_or(Error::NotFound {
+                entity: "Invoice Attachment".to_string(),
+                url: endpoint.to_string(),
+                status_code: status,
+                response_body: Some("No attachment was returned after upload".to_string()),
+            })
     } else {
         Err(Error::NotFound {
             entity: "Invoice Attachment".to_string(),
             url: endpoint.to_string(),
             status_code: status,
-            response_body: Some(format!("Failed to upload attachment for invoice with ID {invoice_id}")),
+            response_body: Some(format!(
+                "Failed to upload attachment for invoice with ID {invoice_id}"
+            )),
         })
     }
 }
@@ -854,9 +900,7 @@ pub async fn update_attachment(
     }
 
     // 2. Determine content type from filename extension
-    let ext = Path::new(filename)
-        .extension()
-        .and_then(OsStr::to_str);
+    let ext = Path::new(filename).extension().and_then(OsStr::to_str);
 
     let content_type = match ext {
         Some("pdf") => "application/pdf",
@@ -876,12 +920,12 @@ pub async fn update_attachment(
 
     // Create the endpoint URL using XeroEndpoint
     let endpoint = XeroEndpoint::Custom(vec![
-        "Invoices".to_string(), 
-        invoice_id.to_string(), 
-        "Attachments".to_string(), 
-        filename.to_string()
+        "Invoices".to_string(),
+        invoice_id.to_string(),
+        "Attachments".to_string(),
+        filename.to_string(),
     ]);
-    
+
     let url = endpoint.to_url()?;
     let response = client
         .build_request(reqwest::Method::POST, url)
@@ -890,23 +934,29 @@ pub async fn update_attachment(
         .body(attachment_content.to_vec())
         .send()
         .await?;
-    
+
     let status = response.status();
-    
+
     if status.is_success() {
         let attachments: Attachments = response.json().await?;
-        attachments.attachments.into_iter().next().ok_or(Error::NotFound {
-            entity: "Invoice Attachment".to_string(),
-            url: endpoint.to_string(),
-            status_code: status,
-            response_body: Some("No attachment was returned after update".to_string()),
-        })
+        attachments
+            .attachments
+            .into_iter()
+            .next()
+            .ok_or(Error::NotFound {
+                entity: "Invoice Attachment".to_string(),
+                url: endpoint.to_string(),
+                status_code: status,
+                response_body: Some("No attachment was returned after update".to_string()),
+            })
     } else {
         Err(Error::NotFound {
             entity: "Invoice Attachment".to_string(),
             url: endpoint.to_string(),
             status_code: status,
-            response_body: Some(format!("Failed to update attachment for invoice with ID {invoice_id}")),
+            response_body: Some(format!(
+                "Failed to update attachment for invoice with ID {invoice_id}"
+            )),
         })
     }
 }
@@ -921,9 +971,9 @@ pub async fn post_attachment(
     attachment_filename: String,
     attachment_content: &[u8],
 ) -> Result<Value> {
-    let attachment = upload_attachment(client, invoice_id, &attachment_filename, attachment_content).await?;
-    
+    let attachment =
+        upload_attachment(client, invoice_id, &attachment_filename, attachment_content).await?;
+
     // Convert the Attachment to a Value for backward compatibility
     Ok(serde_json::to_value(attachment)?)
 }
-
