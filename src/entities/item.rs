@@ -21,7 +21,11 @@ pub struct PurchaseDetails {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unit_price: Option<Decimal>,
 
-    /// Account code for cost of goods sold
+    /// Account code for cost of goods sold, only applicable for non-tracked inventory items
+    #[serde(rename = "AccountCode", skip_serializing_if = "Option::is_none")]
+    pub account_code: Option<String>,
+
+    /// Account code for cost of goods sold, only applicable for tracked inventory items
     #[serde(rename = "COGSAccountCode", skip_serializing_if = "Option::is_none")]
     pub cogs_account_code: Option<String>,
 
