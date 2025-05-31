@@ -13,3 +13,5 @@ Cargo.lock
 log.txt
 
 .DS_Store
+
+.envrc.local
