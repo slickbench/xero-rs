@@ -19,6 +19,7 @@ use crate::endpoints::XeroEndpoint;
 use crate::entities::{
     contact::{self, Contact},
     invoice::{self, Invoice},
+    item::{self, Item},
     purchase_order::{self, PurchaseOrder},
     quote::{self, Quote},
     timesheet::{self, PostTimesheet, Timesheet},
@@ -641,6 +642,12 @@ impl Client {
     pub fn pay_calendars(&self) -> PayCalendarsApi {
         PayCalendarsApi { client: self }
     }
+    
+    /// Access the items API
+    #[must_use]
+    pub fn items(&self) -> ItemsApi {
+        ItemsApi { client: self }
+    }
 }
 
 /// API handler for Contacts endpoints
@@ -1131,5 +1138,85 @@ impl PayCalendarsApi<'_> {
         }
         
         Ok(response.payroll_calendars.into_iter().next().unwrap())
+    }
+}
+
+/// API handler for Items endpoints
+#[derive(Debug)]
+pub struct ItemsApi<'a> {
+    client: &'a Client,
+}
+
+impl ItemsApi<'_> {
+    /// Retrieve a list of items with optional filtering
+    #[instrument(skip(self, parameters))]
+    pub async fn list(&self, parameters: item::ListParameters) -> Result<Vec<Item>> {
+        item::list(self.client, parameters).await
+    }
+    
+    /// List all items without any filtering
+    #[instrument(skip(self))]
+    pub async fn list_all(&self) -> Result<Vec<Item>> {
+        item::list_all(self.client).await
+    }
+    
+    /// Retrieve a single item by ID
+    #[instrument(skip(self))]
+    pub async fn get(&self, item_id: Uuid) -> Result<Item> {
+        item::get(self.client, item_id).await
+    }
+    
+    /// Create a single item
+    #[instrument(skip(self, item))]
+    pub async fn create(&self, item: &item::Builder) -> Result<Item> {
+        item::create_single(self.client, item).await
+    }
+    
+    /// Create multiple items
+    #[instrument(skip(self, items))]
+    pub async fn create_multiple(&self, items: &[item::Builder]) -> Result<Vec<Item>> {
+        item::create(self.client, items).await
+    }
+    
+    /// Update or create a single item
+    #[instrument(skip(self, item))]
+    pub async fn update_or_create(&self, item: &item::Builder) -> Result<Item> {
+        let items = item::update_or_create(self.client, &[item.clone()]).await?;
+        items.into_iter().next().ok_or(Error::NotFound {
+            entity: "Item".to_string(),
+            url: item::ENDPOINT.to_string(),
+            status_code: reqwest::StatusCode::NOT_FOUND,
+            response_body: Some("No item returned in response".to_string()),
+        })
+    }
+    
+    /// Update or create multiple items
+    #[instrument(skip(self, items))]
+    pub async fn update_or_create_multiple(&self, items: &[item::Builder]) -> Result<Vec<Item>> {
+        item::update_or_create(self.client, items).await
+    }
+    
+    /// Update a specific item
+    #[instrument(skip(self, item))]
+    pub async fn update(&self, item_id: Uuid, item: &item::Builder) -> Result<Item> {
+        item::update(self.client, item_id, item).await
+    }
+    
+    /// Delete a specific item
+    #[instrument(skip(self))]
+    pub async fn delete(&self, item_id: Uuid) -> Result<()> {
+        item::delete(self.client, item_id).await
+    }
+    
+    /// Get the history for an item
+    #[instrument(skip(self))]
+    pub async fn get_history(&self, item_id: Uuid) -> Result<Vec<item::HistoryRecord>> {
+        item::get_history(self.client, item_id).await
+    }
+    
+    /// Create a history record for an item
+    #[instrument(skip(self))]
+    pub async fn create_history(&self, item_id: Uuid, details: &str) -> Result<Vec<item::HistoryRecord>> {
+        item::create_history(self.client, item_id, details).await
     }
 }

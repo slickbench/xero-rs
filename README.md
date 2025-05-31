@@ -81,3 +81,11 @@ This has been implemented so far:
   - Create
 - Contacts
   - List
+- Items
+  - List (with filtering)
+  - Get by ID
+  - Create
+  - Update
+  - Delete
+  - Update or create
+  - History records

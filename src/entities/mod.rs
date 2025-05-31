@@ -2,13 +2,14 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use self::{
-    contact::Contact, invoice::Invoice, purchase_order::PurchaseOrder, quote::Quote,
+    contact::Contact, invoice::Invoice, item::Item, purchase_order::PurchaseOrder, quote::Quote,
     timesheet::Timesheet,
 };
 
 pub mod connection;
 pub mod contact;
 pub mod invoice;
+pub mod item;
 pub mod line_item;
 pub mod purchase_order;
 pub mod quote;
@@ -22,6 +23,7 @@ pub enum Data {
     Contacts(Vec<Contact>),
     Quotes(Vec<Quote>),
     Timesheets(Vec<Timesheet>),
+    Items(Vec<Item>),
 }
 
 impl Data {
@@ -69,6 +71,15 @@ impl Data {
             None
         }
     }
+
+    #[must_use]
+    pub fn get_items(self) -> Option<Vec<Item>> {
+        if let Self::Items(items) = self {
+            Some(items)
+        } else {
+            None
+        }
+    }
 }
 
 #[derive(Clone, Deserialize)]
@@ -98,10 +109,16 @@ pub trait EntityEndpoint<T, ListParams = ()> {
     fn endpoint() -> &'static str;
 
     /// Get entity by ID
-    fn get(client: &crate::Client, id: uuid::Uuid) -> impl std::future::Future<Output = crate::error::Result<T>> + Send;
+    fn get(
+        client: &crate::Client,
+        id: uuid::Uuid,
+    ) -> impl std::future::Future<Output = crate::error::Result<T>> + Send;
 
     /// List entities with optional parameters
-    fn list(client: &crate::Client, params: ListParams) -> impl std::future::Future<Output = crate::error::Result<Vec<T>>> + Send;
+    fn list(
+        client: &crate::Client,
+        params: ListParams,
+    ) -> impl std::future::Future<Output = crate::error::Result<Vec<T>>> + Send;
 }
 
 /// Generic implementation for entity CRUD operations
@@ -115,7 +132,7 @@ pub mod endpoint_utils {
         error::{Error, Result},
         Client,
     };
-    
+
     // Re-export list function for easier access
     pub use self::impl_helpers::list;
 
@@ -180,7 +197,10 @@ pub mod endpoint_utils {
 /// Trait for entity builders
 pub trait EntityBuilder<T> {
     /// Build and create the entity via the API
-    fn create(self, client: &crate::Client) -> impl std::future::Future<Output = crate::error::Result<T>> + Send;
+    fn create(
+        self,
+        client: &crate::Client,
+    ) -> impl std::future::Future<Output = crate::error::Result<T>> + Send;
 }
 
 /// Helper functions for entity creation
