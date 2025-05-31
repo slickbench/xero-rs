@@ -30,6 +30,18 @@ pub enum ErrorType {
         timesheets: Option<Vec<TimesheetValidationError>>,
     },
     PostDataInvalidException,
+    QueryParseException,
+    ObjectNotFoundException,
+    OrganisationOfflineException,
+    UnauthorisedException,
+    NoDataProcessedException,
+    UnsupportedMediaTypeException,
+    MethodNotAllowedException,
+    InternalServerException,
+    NotImplementedException,
+    NotAvailableException,
+    RateLimitExceededException,
+    SystemUnavailableException,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -61,10 +73,53 @@ pub struct ValidationExceptionElement {
 #[serde(rename_all = "PascalCase")]
 #[allow(dead_code)]
 pub struct Response {
-    error_number: u64,
-    message: String,
+    pub error_number: u64,
+    pub message: String,
     #[serde(flatten)]
-    error: ErrorType,
+    pub error: ErrorType,
+}
+
+impl fmt::Display for Response {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Xero API Error ({}): {}",
+            self.error_number, self.message
+        )?;
+
+        // Add additional details based on error type
+        match &self.error {
+            ErrorType::ValidationException {
+                elements,
+                timesheets,
+            } => {
+                if !elements.is_empty() {
+                    write!(f, "\nValidation errors:")?;
+                    for element in elements {
+                        for error in &element.validation_errors {
+                            write!(f, "\n  - {}", error.message)?;
+                        }
+                    }
+                }
+                if let Some(timesheet_errors) = timesheets {
+                    if !timesheet_errors.is_empty() {
+                        write!(f, "\nTimesheet errors:")?;
+                        for ts_error in timesheet_errors {
+                            for error in &ts_error.validation_errors {
+                                write!(f, "\n  - {}", error.message)?;
+                            }
+                        }
+                    }
+                }
+            }
+            ErrorType::QueryParseException => {
+                write!(f, "\nThe query string could not be parsed. Check for missing quotes or invalid syntax.")?;
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -145,7 +200,7 @@ pub enum Error {
     InvalidEndpoint,
 
     /// A standard error returned while interacting with the API such as a `ValidationException`.
-    #[error("encountered validation exception: {0:#?}")]
+    #[error("{0}")]
     #[diagnostic(
         code(xero_rs::api_validation),
         help("Review the validation errors returned by the Xero API")
@@ -168,7 +223,7 @@ pub enum Error {
         help("Verify your OAuth2 configuration and credentials")
     )]
     OAuth2(oauth2::RequestTokenError<HttpClientError<reqwest::Error>, OAuth2ErrorResponse>),
-    
+
     /// Rate limit exceeded (HTTP 429 Too Many Requests)
     #[error("rate limit exceeded: retry after {retry_after:?}")]
     #[diagnostic(
@@ -212,7 +267,7 @@ impl From<ForbiddenResponse> for Error {
 }
 
 /// Type alias for results from this crate.
-/// 
+///
 /// This is already a Miette diagnostic result due to the implementation of
 /// the Diagnostic trait for the Error type.
 pub type Result<O> = std::result::Result<O, Error>;

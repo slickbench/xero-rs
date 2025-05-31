@@ -148,6 +148,72 @@ async fn get_item() -> Result<()> {
 }
 
 #[tokio::test]
+async fn get_item_by_code() -> Result<()> {
+    test_utils::do_setup();
+
+    // Get credentials from environment
+    let client_id = env::var("XERO_CLIENT_ID").expect("XERO_CLIENT_ID must be set");
+    let client_secret = env::var("XERO_CLIENT_SECRET").expect("XERO_CLIENT_SECRET must be set");
+    let tenant_id =
+        Uuid::parse_str(&env::var("XERO_TENANT_ID").expect("XERO_TENANT_ID must be set"))
+            .expect("Invalid XERO_TENANT_ID format");
+
+    // Create client with credentials and scopes
+    let mut client = xero_rs::Client::from_client_credentials(
+        KeyPair::new(client_id.clone(), Some(client_secret.clone())),
+        xero_rs::Scope::accounting_settings_read(),
+    )
+    .await?;
+
+    // Set the tenant ID
+    client.set_tenant(Some(tenant_id));
+
+    // First, list items to get a code
+    let items = client.items().list_all().await?;
+
+    if let Some(first_item) = items.first() {
+        // Get the specific item by code
+        let item = client.items().get_by_code(&first_item.code).await?;
+        info!("Retrieved item by code: {:?}", item);
+
+        assert_eq!(item.item_id, first_item.item_id);
+        assert_eq!(item.code, first_item.code);
+        assert_eq!(item.name, first_item.name);
+    } else {
+        info!("No items found in the organization");
+
+        // Create a temporary item to test the get_by_code operation
+        // Need write permissions for this
+        let mut write_client = xero_rs::Client::from_client_credentials(
+            KeyPair::new(client_id, Some(client_secret)),
+            xero_rs::Scope::accounting_settings(),
+        )
+        .await?;
+        write_client.set_tenant(Some(tenant_id));
+
+        let unique_code = format!("GETCODE_TEST_{}", unique_timestamp());
+        let test_item = item::Builder::new(&unique_code, "Get by Code Test Item")
+            .with_description("Temporary item for testing get_by_code operation");
+
+        let created_item = write_client.items().create(&test_item).await?;
+        info!("Created temporary item for testing: {:?}", created_item);
+
+        // Now test the get_by_code operation with read-only client
+        let retrieved_item = client.items().get_by_code(&unique_code).await?;
+        info!("Retrieved item by code: {:?}", retrieved_item);
+
+        assert_eq!(retrieved_item.item_id, created_item.item_id);
+        assert_eq!(retrieved_item.code, unique_code);
+        assert_eq!(retrieved_item.name, "Get by Code Test Item");
+
+        // Clean up
+        write_client.items().delete(created_item.item_id).await?;
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn create_update_delete_item() -> Result<()> {
     test_utils::do_setup();
 

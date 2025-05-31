@@ -357,6 +357,29 @@ impl EntityEndpoint<Item, ListParameters> for Item {
     }
 }
 
+// Add extension methods to Item
+impl Item {
+    /// Get a single item by code
+    pub async fn get_by_code(client: &Client, code: &str) -> Result<Item> {
+        use std::str::FromStr;
+        use url::Url;
+
+        let endpoint = Url::from_str(ENDPOINT)
+            .and_then(|endpoint| endpoint.join(code))
+            .map_err(|_| Error::InvalidEndpoint)?;
+        let endpoint_str = endpoint.to_string();
+        let empty_vec: Vec<String> = Vec::new();
+        let response: ListResponse = client.get(endpoint, &empty_vec).await?;
+        let items = Vec::from(response);
+        items.into_iter().next().ok_or(Error::NotFound {
+            entity: "Item".to_string(),
+            url: endpoint_str,
+            status_code: reqwest::StatusCode::NOT_FOUND,
+            response_body: Some(format!("Item with code {} not found", code)),
+        })
+    }
+}
+
 /// List items with optional parameters
 pub async fn list(client: &Client, params: ListParameters) -> Result<Vec<Item>> {
     Item::list(client, params).await
@@ -370,6 +393,11 @@ pub async fn list_all(client: &Client) -> Result<Vec<Item>> {
 /// Get a single item by ID
 pub async fn get(client: &Client, item_id: Uuid) -> Result<Item> {
     Item::get(client, item_id).await
+}
+
+/// Get a single item by code
+pub async fn get_by_code(client: &Client, code: &str) -> Result<Item> {
+    Item::get_by_code(client, code).await
 }
 
 /// Create one or more items

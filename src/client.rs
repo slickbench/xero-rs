@@ -585,11 +585,48 @@ impl Client {
                 StatusCode::FORBIDDEN => Err(Error::Forbidden(
                     serde_json::from_str(&text).map_err(handle_deserialize_error)?,
                 )),
+                StatusCode::BAD_REQUEST => {
+                    // Try to parse as API error response
+                    match serde_json::from_str::<error::Response>(&text) {
+                        Ok(api_error) => {
+                            tracing::error!("API error response: {:?}", api_error);
+                            Err(Error::API(api_error))
+                        }
+                        Err(e) => {
+                            // If we can't parse the error response, include the raw text
+                            tracing::error!("Failed to parse API error response: {}, raw response: {}", e, text);
+                            // Try to extract basic error info from the raw response
+                            if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&text) {
+                                let error_type = json_value.get("Type")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("Unknown");
+                                let message = json_value.get("Message")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or(&text);
+                                let error_number = json_value.get("ErrorNumber")
+                                    .and_then(|v| v.as_u64())
+                                    .unwrap_or(0);
+                                
+                                tracing::error!(
+                                    "Xero API error: Type={}, ErrorNumber={}, Message={}",
+                                    error_type, error_number, message
+                                );
+                            }
+                            Err(handle_deserialize_error(e))
+                        }
+                    }
+                }
                 _ => {
                     tracing::error!("Unexpected status code: {}", status);
-                    Err(Error::API(
-                        serde_json::from_str(&text).map_err(handle_deserialize_error)?,
-                    ))
+                    // Try to parse as API error first
+                    match serde_json::from_str::<error::Response>(&text) {
+                        Ok(api_error) => Err(Error::API(api_error)),
+                        Err(e) => {
+                            // If it's not an API error, return generic error with details
+                            tracing::error!("Failed to parse response as API error: {}, raw response: {}", e, text);
+                            Err(handle_deserialize_error(e))
+                        }
+                    }
                 }
             },
         }
@@ -1164,6 +1201,12 @@ impl ItemsApi<'_> {
     #[instrument(skip(self))]
     pub async fn get(&self, item_id: Uuid) -> Result<Item> {
         item::get(self.client, item_id).await
+    }
+    
+    /// Retrieve a single item by code
+    #[instrument(skip(self))]
+    pub async fn get_by_code(&self, code: &str) -> Result<Item> {
+        item::get_by_code(self.client, code).await
     }
     
     /// Create a single item
