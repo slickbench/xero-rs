@@ -2,6 +2,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+/// Line amount types for tax calculations
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum LineAmountType {
@@ -13,6 +14,16 @@ pub enum LineAmountType {
     NoTax,
 }
 
+/// Represents a line item in an invoice, quote, or other financial document.
+///
+/// # Discount Fields
+///
+/// Line items support two types of discounts:
+/// - `discount_rate`: A percentage discount (e.g., 10.00 for 10%)
+/// - `discount_amount`: A fixed amount discount (e.g., 25.00 for $25.00)
+///
+/// Note: `discount_amount` is only supported on ACCREC invoices and quotes.
+/// ACCPAY invoices and credit notes in Xero do not support discounts.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct LineItem {
@@ -95,5 +106,42 @@ impl Builder {
             unit_amount,
             ..Self::default()
         }
+    }
+
+    /// Set the percentage discount for this line item
+    #[must_use]
+    pub fn with_discount_rate(mut self, rate: Decimal) -> Self {
+        self.discount_rate = Some(rate);
+        self
+    }
+
+    /// Set the fixed discount amount for this line item
+    ///
+    /// Note: Only supported on ACCREC invoices and quotes
+    #[must_use]
+    pub fn with_discount_amount(mut self, amount: Decimal) -> Self {
+        self.discount_amount = Some(amount);
+        self
+    }
+
+    /// Set the item code
+    #[must_use]
+    pub fn with_item_code(mut self, code: impl Into<String>) -> Self {
+        self.item_code = Some(code.into());
+        self
+    }
+
+    /// Set the account code
+    #[must_use]
+    pub fn with_account_code(mut self, code: impl Into<String>) -> Self {
+        self.account_code = Some(code.into());
+        self
+    }
+
+    /// Set the tax type
+    #[must_use]
+    pub fn with_tax_type(mut self, tax_type: impl Into<String>) -> Self {
+        self.tax_type = Some(tax_type.into());
+        self
     }
 }

@@ -8,8 +8,9 @@ use std::env;
 use std::fs;
 use time::macros::date;
 use uuid::Uuid;
-use xero_rs::{KeyPair, line_item::LineAmountType};
-use xero_rs::quote::{QuoteBuilder, Status, ListParameters};
+use xero_rs::contact::ContactIdentifier;
+use xero_rs::quote::{ListParameters, QuoteBuilder, Status};
+use xero_rs::{line_item::LineAmountType, KeyPair};
 
 /// Try to set up a client. Will return None if the required environment variables are not set.
 async fn try_setup_client() -> Option<xero_rs::Client> {
@@ -19,7 +20,7 @@ async fn try_setup_client() -> Option<xero_rs::Client> {
     let client_id = env::var("XERO_CLIENT_ID").ok()?;
     let client_secret = env::var("XERO_CLIENT_SECRET").ok()?;
     let tenant_id_str = env::var("XERO_TENANT_ID").ok()?;
-    
+
     let tenant_id = match Uuid::parse_str(&tenant_id_str) {
         Ok(id) => id,
         Err(_) => {
@@ -39,7 +40,7 @@ async fn try_setup_client() -> Option<xero_rs::Client> {
     // Set the tenant ID and return the configured client
     let mut client = client;
     client.set_tenant(Some(tenant_id));
-    
+
     Some(client)
 }
 
@@ -57,10 +58,9 @@ async fn list_quotes() -> Result<()> {
     // List all quotes
     let quotes = client.quotes().list_all().await?;
     info!("Found {} quotes", quotes.len());
-    
+
     // List with filtering using builder pattern
-    let params = ListParameters::builder()
-        .with_page(1);
+    let params = ListParameters::builder().with_page(1);
     let filtered_quotes = client.quotes().list(params).await?;
     info!("Found {} quotes with filtering", filtered_quotes.len());
 
@@ -80,7 +80,7 @@ async fn get_quote() -> Result<()> {
 
     // Get all quotes first
     let quotes = client.quotes().list_all().await?;
-    
+
     // If there are quotes, get a specific one
     if !quotes.is_empty() {
         let quote_id = quotes[0].quote_id;
@@ -103,7 +103,7 @@ async fn create_update_quote() -> Result<()> {
             return Ok(());
         }
     };
-    
+
     // First get a contact to use
     let contacts = match client.contacts().list().await {
         Ok(contacts) => contacts,
@@ -112,19 +112,20 @@ async fn create_update_quote() -> Result<()> {
             return Ok(());
         }
     };
-    
+
     if contacts.is_empty() {
         info!("No contacts found, skipping quote creation test");
         return Ok(());
     }
-    
+
     let contact = contacts[0].clone();
-    
+    let contact_id = contact.contact_id;
+
     // Create a quote
     let quote_builder = QuoteBuilder {
-        contact,
-        date: date!(2023-10-01),
-        expiry_date: Some(date!(2023-10-31)),
+        contact: ContactIdentifier::ID(contact_id),
+        date: date!(2023 - 10 - 01),
+        expiry_date: Some(date!(2023 - 10 - 31)),
         line_items: vec![],
         line_amount_types: LineAmountType::Exclusive,
         title: Some("Test Quote".to_string()),
@@ -136,24 +137,24 @@ async fn create_update_quote() -> Result<()> {
         quote_id: None,
         status: Some(Status::Draft),
     };
-    
+
     // Create the quote
     let created_quote = match client.quotes().create(&quote_builder).await {
         Ok(quote) => {
             info!("Created quote: {}", quote.quote_id);
             quote
-        },
+        }
         Err(e) => {
             info!("Could not create quote: {}", e);
             return Ok(());
         }
     };
-    
+
     // Now update it
     let updated_builder = QuoteBuilder {
-        contact: created_quote.contact.clone(),
-        date: date!(2023-10-01),
-        expiry_date: Some(date!(2023-11-15)), // Extended expiry
+        contact: ContactIdentifier::ID(contact_id),
+        date: date!(2023 - 10 - 01),
+        expiry_date: Some(date!(2023 - 11 - 15)), // Extended expiry
         line_items: vec![],
         line_amount_types: LineAmountType::Exclusive,
         title: Some("Updated Test Quote".to_string()),
@@ -165,16 +166,24 @@ async fn create_update_quote() -> Result<()> {
         quote_id: None,
         status: Some(Status::Draft),
     };
-    
-    match client.quotes().update(created_quote.quote_id, &updated_builder).await {
+
+    match client
+        .quotes()
+        .update(created_quote.quote_id, &updated_builder)
+        .await
+    {
         Ok(quote) => {
-            info!("Updated quote: {} - {}", quote.quote_id, quote.reference.unwrap_or_default());
-        },
+            info!(
+                "Updated quote: {} - {}",
+                quote.quote_id,
+                quote.reference.unwrap_or_default()
+            );
+        }
         Err(e) => {
             info!("Could not update quote: {}", e);
         }
     }
-    
+
     Ok(())
 }
 
@@ -188,20 +197,24 @@ async fn quote_history() -> Result<()> {
             return Ok(());
         }
     };
-    
+
     // Get all quotes first
     let quotes = client.quotes().list_all().await?;
-    
+
     // If there are quotes, work with the first one
     if !quotes.is_empty() {
         let quote_id = quotes[0].quote_id;
-        
+
         // Add a history record
-        match client.quotes().create_history(quote_id, "Testing history creation").await {
+        match client
+            .quotes()
+            .create_history(quote_id, "Testing history creation")
+            .await
+        {
             Ok(_) => info!("Created history record"),
             Err(e) => info!("Could not create history record: {}", e),
         };
-        
+
         // Get history records
         match client.quotes().get_history(quote_id).await {
             Ok(history) => info!("Found {} history records", history.len()),
@@ -210,7 +223,7 @@ async fn quote_history() -> Result<()> {
     } else {
         info!("No quotes found to test history functionality");
     }
-    
+
     Ok(())
 }
 
@@ -224,19 +237,19 @@ async fn quote_pdf() -> Result<()> {
             return Ok(());
         }
     };
-    
+
     // Get all quotes first
     let quotes = client.quotes().list_all().await?;
-    
+
     // If there are quotes, get a PDF for the first one
     if !quotes.is_empty() {
         let quote_id = quotes[0].quote_id;
-        
+
         // Get the PDF
         match client.quotes().get_pdf(quote_id).await {
             Ok(pdf_data) => {
                 info!("Downloaded PDF with {} bytes", pdf_data.len());
-                
+
                 // Optionally save for manual inspection
                 let pdf_path = format!("quote_{}.pdf", quote_id);
                 if let Err(e) = fs::write(&pdf_path, &pdf_data) {
@@ -244,13 +257,13 @@ async fn quote_pdf() -> Result<()> {
                 } else {
                     info!("Saved PDF to {}", pdf_path);
                 }
-            },
+            }
             Err(e) => info!("Could not download PDF: {}", e),
         }
     } else {
         info!("No quotes found to test PDF functionality");
     }
-    
+
     Ok(())
 }
 
@@ -264,71 +277,82 @@ async fn quote_attachments() -> Result<()> {
             return Ok(());
         }
     };
-    
+
     // Get all quotes first
     let quotes = client.quotes().list_all().await?;
-    
+
     // If there are quotes, work with the first one
     if !quotes.is_empty() {
         let quote_id = quotes[0].quote_id;
-        
+
         // Create a sample attachment
         let test_file_content = b"This is a test file for quote attachment testing";
         let filename = "test_attachment.txt";
-        
+
         // Upload the attachment
-        let _attachment = match client.quotes().upload_attachment(
-            quote_id, 
-            filename, 
-            test_file_content
-        ).await {
+        let _attachment = match client
+            .quotes()
+            .upload_attachment(quote_id, filename, test_file_content)
+            .await
+        {
             Ok(attachment) => {
                 info!("Uploaded attachment: {}", attachment.attachment_id);
                 Some(attachment)
-            },
+            }
             Err(e) => {
                 info!("Could not upload attachment: {}", e);
                 None
             }
         };
-        
+
         // List attachments
         match client.quotes().list_attachments(quote_id).await {
             Ok(attachments) => {
                 info!("Quote has {} attachments", attachments.len());
-                
+
                 if !attachments.is_empty() {
                     // Get an attachment by ID
                     let attachment_id = attachments[0].attachment_id;
-                    match client.quotes().get_attachment(quote_id, attachment_id).await {
+                    match client
+                        .quotes()
+                        .get_attachment(quote_id, attachment_id)
+                        .await
+                    {
                         Ok(data) => info!("Downloaded attachment with {} bytes", data.len()),
                         Err(e) => info!("Could not download attachment: {}", e),
                     };
-                    
+
                     // Get an attachment by filename
                     let filename = &attachments[0].file_name;
-                    match client.quotes().get_attachment_by_filename(quote_id, filename).await {
-                        Ok(data) => info!("Downloaded attachment by filename with {} bytes", data.len()),
+                    match client
+                        .quotes()
+                        .get_attachment_by_filename(quote_id, filename)
+                        .await
+                    {
+                        Ok(data) => info!(
+                            "Downloaded attachment by filename with {} bytes",
+                            data.len()
+                        ),
                         Err(e) => info!("Could not download attachment by filename: {}", e),
                     };
-                    
+
                     // Update an attachment
                     let updated_content = b"This file has been updated";
-                    match client.quotes().update_attachment(
-                        quote_id,
-                        filename,
-                        updated_content
-                    ).await {
+                    match client
+                        .quotes()
+                        .update_attachment(quote_id, filename, updated_content)
+                        .await
+                    {
                         Ok(attachment) => info!("Updated attachment: {}", attachment.attachment_id),
                         Err(e) => info!("Could not update attachment: {}", e),
                     };
                 }
-            },
+            }
             Err(e) => info!("Could not list attachments: {}", e),
         }
     } else {
         info!("No quotes found to test attachment functionality");
     }
-    
+
     Ok(())
 }
