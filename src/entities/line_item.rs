@@ -36,6 +36,8 @@ pub struct LineItem {
     pub line_amount: Option<Decimal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub discount_rate: Option<Decimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub discount_amount: Option<Decimal>,
     #[serde(default)]
     pub tracking: Vec<serde_json::Value>,
     #[serde(default)]
@@ -50,6 +52,7 @@ impl LineItem {
         builder.account_code = self.account_code;
         builder.tax_type = self.tax_type;
         builder.discount_rate = self.discount_rate;
+        builder.discount_amount = self.discount_amount;
         builder.id = Some(self.id);
 
         builder
@@ -75,11 +78,17 @@ pub struct Builder {
     pub tax_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub discount_rate: Option<Decimal>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub discount_amount: Option<Decimal>,
 }
 
 impl Builder {
     #[must_use]
-    pub fn new(description: Option<String>, quantity: Option<Decimal>, unit_amount: Option<Decimal>) -> Self {
+    pub fn new(
+        description: Option<String>,
+        quantity: Option<Decimal>,
+        unit_amount: Option<Decimal>,
+    ) -> Self {
         Builder {
             description,
             quantity,
