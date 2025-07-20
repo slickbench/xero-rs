@@ -15,7 +15,7 @@ use uuid::Uuid;
 use crate::error::{self, Error, Result};
 use crate::oauth::{KeyPair, OAuthClient};
 use crate::scope::Scope;
-use crate::endpoints::XeroEndpoint;
+use crate::endpoints::{XeroEndpoint, BASE_URL};
 use crate::entities::{
     contact::{self, Contact},
     invoice::{self, Invoice},
@@ -320,7 +320,7 @@ impl Client {
     pub async fn get<
         'a,
         R: DeserializeOwned,
-        U: IntoUrl + fmt::Debug + Clone,
+        U: AsRef<str> + fmt::Debug + Clone,
         T: Serialize + Sized + fmt::Debug,
     >(
         &self,
@@ -329,7 +329,19 @@ impl Client {
     ) -> Result<R> {
         self.execute_with_retry(|| async {
             trace!(?query, ?url, "making GET request");
-            let response = self.build_request(Method::GET, url.clone())
+            
+            // Handle relative URLs by prepending the base URL if needed
+            let url_str = url.as_ref();
+            let resolved_url = if url_str.starts_with("http://") || url_str.starts_with("https://") {
+                // It's already an absolute URL
+                Url::parse(url_str).map_err(|_| Error::InvalidEndpoint)?
+            } else {
+                // It's a relative URL, prepend the base URL
+                let base = Url::parse(BASE_URL).map_err(|_| Error::InvalidEndpoint)?;
+                base.join(url_str).map_err(|_| Error::InvalidEndpoint)?
+            };
+            
+            let response = self.build_request(Method::GET, resolved_url)
                 .query(query)
                 .send()
                 .await?;
@@ -366,7 +378,7 @@ impl Client {
     pub async fn put<
         'a, 
         R: DeserializeOwned, 
-        U: IntoUrl + fmt::Debug + Clone, 
+        U: AsRef<str> + fmt::Debug + Clone, 
         T: Serialize + Sized
     >(
         &self,
@@ -375,7 +387,19 @@ impl Client {
     ) -> Result<R> {
         self.execute_with_retry(|| async {
             trace!(json = ?serde_json::to_string(data).unwrap(), ?url, "making PUT request");
-            let response = self.build_request(Method::PUT, url.clone())
+            
+            // Handle relative URLs by prepending the base URL if needed
+            let url_str = url.as_ref();
+            let resolved_url = if url_str.starts_with("http://") || url_str.starts_with("https://") {
+                // It's already an absolute URL
+                Url::parse(url_str).map_err(|_| Error::InvalidEndpoint)?
+            } else {
+                // It's a relative URL, prepend the base URL
+                let base = Url::parse(BASE_URL).map_err(|_| Error::InvalidEndpoint)?;
+                base.join(url_str).map_err(|_| Error::InvalidEndpoint)?
+            };
+            
+            let response = self.build_request(Method::PUT, resolved_url)
                 .json(data)
                 .send()
                 .await?;
@@ -389,7 +413,7 @@ impl Client {
     pub async fn post<
         'a,
         R: DeserializeOwned,
-        U: IntoUrl + fmt::Debug + Clone,
+        U: AsRef<str> + fmt::Debug + Clone,
         T: Serialize + Sized + fmt::Debug,
     >(
         &self,
@@ -398,7 +422,19 @@ impl Client {
     ) -> Result<R> {
         self.execute_with_retry(|| async {
             trace!(json = ?serde_json::to_string(data).unwrap(), ?url, "making POST request");
-            let response = self.build_request(Method::POST, url.clone())
+            
+            // Handle relative URLs by prepending the base URL if needed
+            let url_str = url.as_ref();
+            let resolved_url = if url_str.starts_with("http://") || url_str.starts_with("https://") {
+                // It's already an absolute URL
+                Url::parse(url_str).map_err(|_| Error::InvalidEndpoint)?
+            } else {
+                // It's a relative URL, prepend the base URL
+                let base = Url::parse(BASE_URL).map_err(|_| Error::InvalidEndpoint)?;
+                base.join(url_str).map_err(|_| Error::InvalidEndpoint)?
+            };
+            
+            let response = self.build_request(Method::POST, resolved_url)
                 .json(data)
                 .send()
                 .await?;
@@ -447,10 +483,22 @@ impl Client {
 
     /// Perform an authenticated `DELETE` request against the API with automatic retry.
     #[instrument(skip(self))]
-    pub async fn delete<U: IntoUrl + fmt::Debug + Clone>(&self, url: U) -> Result<()> {
+    pub async fn delete<U: AsRef<str> + fmt::Debug + Clone>(&self, url: U) -> Result<()> {
         self.execute_with_retry(|| async {
             trace!(?url, "making DELETE request");
-            let response = self.build_request(Method::DELETE, url.clone()).send().await?;
+            
+            // Handle relative URLs by prepending the base URL if needed
+            let url_str = url.as_ref();
+            let resolved_url = if url_str.starts_with("http://") || url_str.starts_with("https://") {
+                // It's already an absolute URL
+                Url::parse(url_str).map_err(|_| Error::InvalidEndpoint)?
+            } else {
+                // It's a relative URL, prepend the base URL
+                let base = Url::parse(BASE_URL).map_err(|_| Error::InvalidEndpoint)?;
+                base.join(url_str).map_err(|_| Error::InvalidEndpoint)?
+            };
+            
+            let response = self.build_request(Method::DELETE, resolved_url).send().await?;
             
             if response.status() == StatusCode::NO_CONTENT || response.status() == StatusCode::OK {
                 Ok(())
