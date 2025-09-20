@@ -25,15 +25,14 @@ pub fn parse_dotnet_date(date_str: &str) -> Result<Date, String> {
     }
     
     // If the string contains a 'T', it might be a datetime string - extract just the date part
-    if date_str.contains('T') {
-        if let Some(date_part) = date_str.split('T').next() {
+    if date_str.contains('T')
+        && let Some(date_part) = date_str.split('T').next() {
             // Try to parse just the date part
             let format = format_description!("[year]-[month]-[day]");
             if let Ok(date) = Date::parse(date_part, &format) {
                 return Ok(date);
             }
         }
-    }
     
     // Try as plain ISO format
     let format = format_description!("[year]-[month]-[day]");

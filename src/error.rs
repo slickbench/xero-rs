@@ -117,8 +117,8 @@ impl fmt::Display for Response {
                         }
                     }
                 }
-                if let Some(timesheet_errors) = timesheets {
-                    if !timesheet_errors.is_empty() {
+                if let Some(timesheet_errors) = timesheets
+                    && !timesheet_errors.is_empty() {
                         write!(f, "\nTimesheet errors:")?;
                         for ts_error in timesheet_errors {
                             for error in &ts_error.validation_errors {
@@ -126,7 +126,6 @@ impl fmt::Display for Response {
                             }
                         }
                     }
-                }
             }
             ErrorType::QueryParseException => {
                 write!(

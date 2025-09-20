@@ -126,41 +126,41 @@ pub struct ListParameters {
 }
 
 impl ListParameters {
-    /// Create a new builder for ListParameters
+    /// Create a new builder for `ListParameters`
     #[must_use]
     pub fn builder() -> Self {
         Self::default()
     }
 
-    /// Set the date_from filter
+    /// Set the `date_from` filter
     #[must_use]
     pub fn with_date_from(mut self, date: Date) -> Self {
         self.date_from = Some(date);
         self
     }
 
-    /// Set the date_to filter
+    /// Set the `date_to` filter
     #[must_use]
     pub fn with_date_to(mut self, date: Date) -> Self {
         self.date_to = Some(date);
         self
     }
 
-    /// Set the expiry_date_from filter
+    /// Set the `expiry_date_from` filter
     #[must_use]
     pub fn with_expiry_date_from(mut self, date: Date) -> Self {
         self.expiry_date_from = Some(date);
         self
     }
 
-    /// Set the expiry_date_to filter
+    /// Set the `expiry_date_to` filter
     #[must_use]
     pub fn with_expiry_date_to(mut self, date: Date) -> Self {
         self.expiry_date_to = Some(date);
         self
     }
 
-    /// Set the contact_id filter
+    /// Set the `contact_id` filter
     #[must_use]
     pub fn with_contact_id(mut self, id: Uuid) -> Self {
         self.contact_id = Some(id);
@@ -188,7 +188,7 @@ impl ListParameters {
         self
     }
 
-    /// Set the quote_number filter
+    /// Set the `quote_number` filter
     #[must_use]
     pub fn with_quote_number(mut self, number: impl Into<String>) -> Self {
         self.quote_number = Some(number.into());
@@ -583,8 +583,7 @@ pub async fn get_attachment_by_filename(
             url: endpoint.to_string(),
             status_code: status,
             response_body: Some(format!(
-                "Failed to retrieve attachment {} for quote with ID {quote_id}",
-                filename
+                "Failed to retrieve attachment {filename} for quote with ID {quote_id}"
             )),
         })
     }

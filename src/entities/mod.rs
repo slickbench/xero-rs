@@ -164,7 +164,7 @@ pub mod endpoint_utils {
 
     /// Helper implementations for working with API entity collections.
     pub mod impl_helpers {
-        use super::*;
+        use super::{Client, Result};
         use serde::de::DeserializeOwned;
 
         /// Lists all entities without filtering

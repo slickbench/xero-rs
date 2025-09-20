@@ -22,23 +22,22 @@ use super::line_item;
 pub const ENDPOINT: &str = "https://api.xero.com/api.xro/2.0/Invoices/";
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum Type {
     #[serde(rename = "ACCPAY")]
     AccountsPayable,
 
     #[serde(rename = "ACCREC")]
+    #[default]
     AccountsReceivable,
 }
 
-impl Default for Type {
-    fn default() -> Self {
-        Self::AccountsReceivable
-    }
-}
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
+#[derive(Default)]
 pub enum Status {
+    #[default]
     Draft,
     Submitted,
     Deleted,
@@ -47,11 +46,6 @@ pub enum Status {
     Voided,
 }
 
-impl Default for Status {
-    fn default() -> Self {
-        Self::Draft
-    }
-}
 
 /// Represents a payment applied to an invoice
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -187,6 +181,7 @@ pub struct Invoice {
 
 impl Invoice {
     /// Get the status of the invoice as an enum
+    #[must_use] 
     pub fn status_enum(&self) -> Option<Status> {
         match self.status.as_str() {
             "DRAFT" => Some(Status::Draft),
@@ -288,41 +283,41 @@ pub struct ListParameters {
 }
 
 impl ListParameters {
-    /// Create a new builder for ListParameters
+    /// Create a new builder for `ListParameters`
     #[must_use]
     pub fn builder() -> Self {
         Self::default()
     }
 
-    /// Set the date_from filter
+    /// Set the `date_from` filter
     #[must_use]
     pub fn with_date_from(mut self, date: Date) -> Self {
         self.date_from = Some(date);
         self
     }
 
-    /// Set the date_to filter
+    /// Set the `date_to` filter
     #[must_use]
     pub fn with_date_to(mut self, date: Date) -> Self {
         self.date_to = Some(date);
         self
     }
 
-    /// Set the due_date_from filter
+    /// Set the `due_date_from` filter
     #[must_use]
     pub fn with_due_date_from(mut self, date: Date) -> Self {
         self.due_date_from = Some(date);
         self
     }
 
-    /// Set the due_date_to filter
+    /// Set the `due_date_to` filter
     #[must_use]
     pub fn with_due_date_to(mut self, date: Date) -> Self {
         self.due_date_to = Some(date);
         self
     }
 
-    /// Set the contact_id filter
+    /// Set the `contact_id` filter
     #[must_use]
     pub fn with_contact_id(mut self, id: Uuid) -> Self {
         self.contact_id = Some(id);
@@ -350,21 +345,21 @@ impl ListParameters {
         self
     }
 
-    /// Set the invoice_number filter
+    /// Set the `invoice_number` filter
     #[must_use]
     pub fn with_invoice_number(mut self, number: impl Into<String>) -> Self {
         self.invoice_number = Some(number.into());
         self
     }
 
-    /// Set the include_archived filter
+    /// Set the `include_archived` filter
     #[must_use]
     pub fn with_include_archived(mut self, include: bool) -> Self {
         self.include_archived = Some(include);
         self
     }
 
-    /// Set the created_by_my_app filter
+    /// Set the `created_by_my_app` filter
     #[must_use]
     pub fn with_created_by_my_app(mut self, created_by_my_app: bool) -> Self {
         self.created_by_my_app = Some(created_by_my_app);
@@ -656,8 +651,7 @@ pub async fn get_pdf(client: &mut Client, invoice_id: Uuid) -> Result<Vec<u8>> {
 /// Get the online invoice URL
 pub async fn get_online_invoice(client: &mut Client, invoice_id: Uuid) -> Result<String> {
     let endpoint = XeroEndpoint::from_string(format!(
-        "https://api.xero.com/api.xro/2.0/Invoices/{}/OnlineInvoice",
-        invoice_id
+        "https://api.xero.com/api.xro/2.0/Invoices/{invoice_id}/OnlineInvoice"
     ));
     let empty_tuple = ();
     let response: OnlineInvoices = client.get_endpoint(endpoint, &empty_tuple).await?;
@@ -684,8 +678,7 @@ pub async fn email(client: &mut Client, invoice_id: Uuid) -> Result<()> {
 /// Get history records for an invoice
 pub async fn get_history(client: &mut Client, invoice_id: Uuid) -> Result<Vec<HistoryRecord>> {
     let endpoint = XeroEndpoint::from_string(format!(
-        "https://api.xero.com/api.xro/2.0/Invoices/{}/history",
-        invoice_id
+        "https://api.xero.com/api.xro/2.0/Invoices/{invoice_id}/history"
     ));
     let empty_tuple = ();
     let response: HistoryRecords = client.get_endpoint(endpoint, &empty_tuple).await?;
@@ -724,8 +717,7 @@ pub async fn create_history(
 /// List attachments for an invoice
 pub async fn list_attachments(client: &mut Client, invoice_id: Uuid) -> Result<Vec<Attachment>> {
     let endpoint = XeroEndpoint::from_string(format!(
-        "https://api.xero.com/api.xro/2.0/Invoices/{}/Attachments",
-        invoice_id
+        "https://api.xero.com/api.xro/2.0/Invoices/{invoice_id}/Attachments"
     ));
     let empty_tuple = ();
     let response: Attachments = client.get_endpoint(endpoint, &empty_tuple).await?;
@@ -798,8 +790,7 @@ pub async fn get_attachment_by_filename(
             url: endpoint.to_string(),
             status_code: status,
             response_body: Some(format!(
-                "Failed to retrieve attachment {} for invoice with ID {invoice_id}",
-                filename
+                "Failed to retrieve attachment {filename} for invoice with ID {invoice_id}"
             )),
         })
     }
@@ -963,7 +954,7 @@ pub async fn update_attachment(
 
 // Keep post_attachment as an alias for upload_attachment for backward compatibility
 /// Post an attachment to an invoice.
-/// This function is an alias for upload_attachment and is kept for backward compatibility.
+/// This function is an alias for `upload_attachment` and is kept for backward compatibility.
 #[instrument(skip(client, attachment_content))]
 pub async fn post_attachment(
     client: &mut Client,

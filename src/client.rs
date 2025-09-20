@@ -54,6 +54,7 @@ const HEADER_RATE_LIMIT_PROBLEM: &str = "X-Rate-Limit-Problem";
 /// - Daily limit: 5000 calls per day per tenant
 /// - Minute limit: 60 calls per minute per tenant
 /// - App minute limit: 10,000 calls per minute across all tenants
+#[derive(Default)]
 pub struct RateLimitInfo {
     /// Number of remaining API calls for the day (out of 5000)
     pub day_limit_remaining: Option<u32>,
@@ -63,15 +64,6 @@ pub struct RateLimitInfo {
     pub app_minute_limit_remaining: Option<u32>,
 }
 
-impl Default for RateLimitInfo {
-    fn default() -> Self {
-        Self {
-            day_limit_remaining: None,
-            minute_limit_remaining: None,
-            app_minute_limit_remaining: None,
-        }
-    }
-}
 
 impl RateLimitInfo {
     /// Extract rate limit information from response headers
@@ -93,10 +85,11 @@ impl RateLimitInfo {
     }
 
     /// Returns true if any of the limits are close to being exhausted
+    #[must_use] 
     pub fn is_near_limit(&self) -> bool {
-        self.day_limit_remaining.map_or(false, |v| v < 100)
-            || self.minute_limit_remaining.map_or(false, |v| v < 10)
-            || self.app_minute_limit_remaining.map_or(false, |v| v < 100)
+        self.day_limit_remaining.is_some_and(|v| v < 100)
+            || self.minute_limit_remaining.is_some_and(|v| v < 10)
+            || self.app_minute_limit_remaining.is_some_and(|v| v < 100)
     }
 
     /// Log current rate limit status if getting close to limits
@@ -292,7 +285,7 @@ impl Client {
     ///
     /// # Arguments
     ///
-    /// * `key_pair` - The OAuth2 credentials to use for refreshing the token
+    /// * `key_pair` - The `OAuth2` credentials to use for refreshing the token
     ///
     /// # Example
     ///
@@ -306,6 +299,7 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
+    #[must_use] 
     pub fn with_auto_refresh(mut self, key_pair: KeyPair) -> Self {
         self.refresh_credentials = Some(key_pair);
         self
@@ -314,6 +308,7 @@ impl Client {
     /// Disable automatic token refresh.
     ///
     /// This explicitly removes any stored credentials for automatic refresh.
+    #[must_use] 
     pub fn without_auto_refresh(mut self) -> Self {
         self.refresh_credentials = None;
         self
@@ -331,6 +326,7 @@ impl Client {
     }
 
     /// Get the current rate limit information
+    #[must_use] 
     pub fn rate_limit_info(&self) -> &RateLimitInfo {
         &self.rate_limit_info
     }
@@ -366,8 +362,8 @@ impl Client {
                     Ok(result) => return Ok(result),
                     Err(e) => {
                         // Check for token expiry
-                        if let Error::API(ref api_err) = e {
-                            if !token_refreshed
+                        if let Error::API(ref api_err) = e
+                            && !token_refreshed
                                 && matches!(api_err.error, error::ErrorType::UnauthorisedException)
                                 && (self.refresh_credentials.is_some()
                                     || self.refresh_token.is_some())
@@ -393,10 +389,9 @@ impl Client {
                                     }
                                 }
                             }
-                        }
                         // Check for rate limiting
-                        if let Error::RateLimitExceeded { retry_after, .. } = e {
-                            if attempts < MAX_RETRY_ATTEMPTS {
+                        if let Error::RateLimitExceeded { retry_after, .. } = e
+                            && attempts < MAX_RETRY_ATTEMPTS {
                                 attempts += 1;
                                 let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
 
@@ -411,7 +406,6 @@ impl Client {
                                 sleep(wait_time).await;
                                 continue;
                             }
-                        }
                         return Err(e);
                     }
                 },
@@ -442,8 +436,8 @@ impl Client {
                     Ok(result) => return Ok(result),
                     Err(e) => {
                         // Check for token expiry
-                        if let Error::API(ref api_err) = e {
-                            if !token_refreshed
+                        if let Error::API(ref api_err) = e
+                            && !token_refreshed
                                 && matches!(api_err.error, error::ErrorType::UnauthorisedException)
                                 && (self.refresh_credentials.is_some()
                                     || self.refresh_token.is_some())
@@ -469,10 +463,9 @@ impl Client {
                                     }
                                 }
                             }
-                        }
                         // Check for rate limiting
-                        if let Error::RateLimitExceeded { retry_after, .. } = e {
-                            if attempts < MAX_RETRY_ATTEMPTS {
+                        if let Error::RateLimitExceeded { retry_after, .. } = e
+                            && attempts < MAX_RETRY_ATTEMPTS {
                                 attempts += 1;
                                 let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
 
@@ -487,7 +480,6 @@ impl Client {
                                 sleep(wait_time).await;
                                 continue;
                             }
-                        }
                         return Err(e);
                     }
                 },
@@ -518,8 +510,8 @@ impl Client {
                     Ok(result) => return Ok(result),
                     Err(e) => {
                         // Check for token expiry
-                        if let Error::API(ref api_err) = e {
-                            if !token_refreshed
+                        if let Error::API(ref api_err) = e
+                            && !token_refreshed
                                 && matches!(api_err.error, error::ErrorType::UnauthorisedException)
                                 && (self.refresh_credentials.is_some()
                                     || self.refresh_token.is_some())
@@ -545,10 +537,9 @@ impl Client {
                                     }
                                 }
                             }
-                        }
                         // Check for rate limiting
-                        if let Error::RateLimitExceeded { retry_after, .. } = e {
-                            if attempts < MAX_RETRY_ATTEMPTS {
+                        if let Error::RateLimitExceeded { retry_after, .. } = e
+                            && attempts < MAX_RETRY_ATTEMPTS {
                                 attempts += 1;
                                 let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
 
@@ -563,7 +554,6 @@ impl Client {
                                 sleep(wait_time).await;
                                 continue;
                             }
-                        }
                         return Err(e);
                     }
                 },
@@ -602,8 +592,8 @@ impl Client {
                     };
 
                     // Check for token expiry
-                    if let Error::API(ref api_err) = error {
-                        if !token_refreshed
+                    if let Error::API(ref api_err) = error
+                        && !token_refreshed
                             && matches!(api_err.error, error::ErrorType::UnauthorisedException)
                             && (self.refresh_credentials.is_some() || self.refresh_token.is_some())
                         {
@@ -628,10 +618,9 @@ impl Client {
                                 }
                             }
                         }
-                    }
                     // Check for rate limiting
-                    if let Error::RateLimitExceeded { retry_after, .. } = error {
-                        if attempts < MAX_RETRY_ATTEMPTS {
+                    if let Error::RateLimitExceeded { retry_after, .. } = error
+                        && attempts < MAX_RETRY_ATTEMPTS {
                             attempts += 1;
                             let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
 
@@ -646,7 +635,6 @@ impl Client {
                             sleep(wait_time).await;
                             continue;
                         }
-                    }
                     return Err(error);
                 }
                 Err(e) => return Err(e.into()),
@@ -682,7 +670,7 @@ impl Client {
         self.execute_get(resolved_url, query).await
     }
 
-    /// Perform a `GET` request against the API using a typed XeroEndpoint with automatic retry.
+    /// Perform a `GET` request against the API using a typed `XeroEndpoint` with automatic retry.
     #[instrument(skip(self, query))]
     pub async fn get_endpoint<'a, R: DeserializeOwned, T: Serialize + Sized + fmt::Debug>(
         &mut self,
@@ -750,7 +738,7 @@ impl Client {
         self.execute_post(resolved_url, data).await
     }
 
-    /// Perform a `POST` request against the API using a typed XeroEndpoint with automatic retry.
+    /// Perform a `POST` request against the API using a typed `XeroEndpoint` with automatic retry.
     #[instrument(skip(self, data))]
     pub async fn post_endpoint<'a, R: DeserializeOwned, T: Serialize + Sized + fmt::Debug>(
         &mut self,
@@ -762,7 +750,7 @@ impl Client {
         self.execute_post(url, data).await
     }
 
-    /// Perform a `PUT` request against the API using a typed XeroEndpoint with automatic retry.
+    /// Perform a `PUT` request against the API using a typed `XeroEndpoint` with automatic retry.
     #[instrument(skip(self, data))]
     pub async fn put_endpoint<'a, R: DeserializeOwned, T: Serialize + Sized>(
         &mut self,
@@ -793,7 +781,7 @@ impl Client {
         self.execute_delete(resolved_url).await
     }
 
-    /// Perform a `DELETE` request against the API using a typed XeroEndpoint with automatic retry.
+    /// Perform a `DELETE` request against the API using a typed `XeroEndpoint` with automatic retry.
     #[instrument(skip(self))]
     pub async fn delete_endpoint(&mut self, endpoint: XeroEndpoint) -> Result<()> {
         trace!(endpoint = ?endpoint, "making DELETE request with endpoint");
@@ -965,7 +953,7 @@ impl Client {
                                     .unwrap_or(&text);
                                 let error_number = json_value
                                     .get("ErrorNumber")
-                                    .and_then(|v| v.as_u64())
+                                    .and_then(serde_json::Value::as_u64)
                                     .unwrap_or(0);
 
                                 tracing::error!(

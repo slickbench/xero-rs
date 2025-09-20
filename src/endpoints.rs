@@ -86,6 +86,7 @@ impl XeroEndpoint {
     }
 
     /// Creates a custom endpoint from a full URL string
+    #[must_use] 
     pub fn from_string(url: String) -> Self {
         Self::Custom(vec![url])
     }

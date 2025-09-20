@@ -156,7 +156,7 @@ pub struct ListParameters {
 }
 
 impl ListParameters {
-    /// Create a new builder for ListParameters
+    /// Create a new builder for `ListParameters`
     #[must_use]
     pub fn builder() -> Self {
         Self::default()
@@ -379,7 +379,7 @@ impl Item {
             entity: "Item".to_string(),
             url: endpoint_str,
             status_code: reqwest::StatusCode::NOT_FOUND,
-            response_body: Some(format!("Item with code {} not found", code)),
+            response_body: Some(format!("Item with code {code} not found")),
         })
     }
 }
@@ -469,7 +469,7 @@ pub async fn update(client: &mut Client, item_id: Uuid, item: &Builder) -> Resul
         .and_then(|items| items.into_iter().next())
         .ok_or(Error::NotFound {
             entity: "Item".to_string(),
-            url: format!("{}{}", ENDPOINT, item_id),
+            url: format!("{ENDPOINT}{item_id}"),
             status_code: reqwest::StatusCode::NOT_FOUND,
             response_body: Some("No item returned in response".to_string()),
         })
