@@ -18,7 +18,7 @@ async fn main() -> Result<()> {
 
     // Create a client with auto-refresh enabled
     // Method 1: Clone the key_pair for use in both places
-    let mut client = Client::from_client_credentials(
+    let client = Client::from_client_credentials(
         key_pair.clone(),
         Some(xero_rs::scope::Scope::common_accounting_read()),
     )
@@ -28,13 +28,13 @@ async fn main() -> Result<()> {
     info!("Created client with auto-refresh enabled");
 
     // List available connections (tenants)
-    let connections = xero_rs::entities::connection::list(&mut client).await?;
+    let connections = xero_rs::entities::connection::list(&client).await?;
     info!("Found {} connections", connections.len());
 
     // Select the first tenant and set it on the client
     if let Some(connection) = connections.first() {
         let tenant_id = connection.tenant_id;
-        client.set_tenant(Some(tenant_id));
+        client.set_tenant(Some(tenant_id)).await;
         info!("Set tenant ID: {}", tenant_id);
     } else {
         error!("No connections found");

@@ -70,15 +70,15 @@ async fn main() -> Result<()> {
     assert_eq!(&state.expect("missing state"), csrf_token.secret());
 
     // Exchange authorization code for access token
-    let mut client = Client::from_authorization_code(key_pair, redirect_url, code).await?;
+    let client = Client::from_authorization_code(key_pair, redirect_url, code).await?;
 
     // List available connections
-    let connections = xero_rs::entities::connection::list(&mut client).await?;
+    let connections = xero_rs::entities::connection::list(&client).await?;
     info!("found client connections: {:#?}", connections);
 
     // Select the first tenant and set it on the client
     let tenant_id = connections.first().expect("No connections found").tenant_id;
-    client.set_tenant(Some(tenant_id));
+    client.set_tenant(Some(tenant_id)).await;
 
     // List invoices
     let invoices = client

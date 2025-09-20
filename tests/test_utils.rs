@@ -22,21 +22,19 @@ pub async fn create_test_client(scopes: Option<xero_rs::Scope>) -> Result<Client
 
     // Create client
     let client =
-        match Client::from_client_credentials(KeyPair::new(client_id, Some(client_secret)), scopes)
+        Client::from_client_credentials(KeyPair::new(client_id, Some(client_secret)), scopes)
             .await
             .into_diagnostic()
-        {
-            Ok(mut client) => {
-                // Set the tenant ID
-                client.set_tenant(Some(Uuid::parse_str(&tenant_id).into_diagnostic()?));
-                info!("Client created successfully");
-                client
-            }
-            Err(e) => {
+            .map_err(|e| {
                 error!("Failed to create client: {:?}", e);
-                return Err(miette::miette!("Failed to create client: {:?}", e));
-            }
-        };
+                miette::miette!("Failed to create client: {:?}", e)
+            })?;
+
+    // Set the tenant ID
+    client
+        .set_tenant(Some(Uuid::parse_str(&tenant_id).into_diagnostic()?))
+        .await;
+    info!("Client created successfully");
 
     Ok(client)
 }

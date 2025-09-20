@@ -20,16 +20,16 @@ async fn authorize_client() -> Result<()> {
             .expect("Invalid XERO_TENANT_ID format");
 
     // Create client with credentials and scopes
-    let mut client = xero_rs::Client::from_client_credentials(
+    let client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id, Some(client_secret)),
         xero_rs::Scope::accounting_settings_read(),
     )
     .await?;
 
     // Set the tenant ID
-    client.set_tenant(Some(tenant_id));
+    client.set_tenant(Some(tenant_id)).await;
 
-    let connections = xero_rs::connection::list(&mut client).await?;
+    let connections = xero_rs::connection::list(&client).await?;
     info!("received client connections: {:?}", connections);
     Ok(())
 }

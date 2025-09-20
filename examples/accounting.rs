@@ -15,18 +15,15 @@ async fn main() -> Result<()> {
     )
     .await?;
 
-    // Create mutable client for API calls
-    let mut client = client;
-
     // List available connections (tenants)
-    let connections = xero_rs::entities::connection::list(&mut client).await?;
+    let connections = xero_rs::entities::connection::list(&client).await?;
     info!("found client connections: {:#?}", connections);
 
     // Select the first tenant and set it on the client
     let tenant_id = connections.first().expect("No connections found").tenant_id;
-    client.set_tenant(Some(tenant_id));
+    client.set_tenant(Some(tenant_id)).await;
 
-    // List invoices - now requires &mut client
+    // List invoices
     let invoices = client
         .invoices()
         .list(xero_rs::entities::invoice::ListParameters::default())

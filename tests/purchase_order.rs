@@ -9,10 +9,10 @@ use anyhow::Result;
 use rust_decimal_macros::dec;
 use uuid::Uuid;
 use xero_rs::{
+    KeyPair,
     contact::ContactIdentifier,
     line_item,
     purchase_order::{self},
-    KeyPair,
 };
 
 #[tokio::test]
@@ -27,7 +27,7 @@ async fn get_purchase_orders() -> Result<()> {
             .expect("Invalid XERO_TENANT_ID format");
 
     // Create client with credentials and scopes directly
-    let mut client = xero_rs::Client::from_client_credentials(
+    let client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id, Some(client_secret)),
         xero_rs::scopes![
             xero_rs::ScopeType::AccountingTransactions(xero_rs::Permission::ReadOnly),
@@ -37,7 +37,7 @@ async fn get_purchase_orders() -> Result<()> {
     .await?;
 
     // Set the tenant ID
-    client.set_tenant(Some(tenant_id));
+    client.set_tenant(Some(tenant_id)).await;
 
     // Use the new method-based API
     let purchase_orders = client.purchase_orders().list().await?;
@@ -70,7 +70,7 @@ async fn create_purchase_order() -> Result<()> {
             .expect("Invalid XERO_TENANT_ID format");
 
     // Create client with credentials and scopes directly
-    let mut client = xero_rs::Client::from_client_credentials(
+    let client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id, Some(client_secret)),
         xero_rs::scopes![
             xero_rs::ScopeType::AccountingTransactions(xero_rs::Permission::ReadWrite),
@@ -80,7 +80,7 @@ async fn create_purchase_order() -> Result<()> {
     .await?;
 
     // Set the tenant ID
-    client.set_tenant(Some(tenant_id));
+    client.set_tenant(Some(tenant_id)).await;
 
     // Use the new method-based API
     let contact = client.contacts().list().await?.into_iter().next().unwrap();

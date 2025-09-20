@@ -21,8 +21,7 @@ use super::line_item;
 
 pub const ENDPOINT: &str = "https://api.xero.com/api.xro/2.0/Invoices/";
 
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Default)]
 pub enum Type {
     #[serde(rename = "ACCPAY")]
     AccountsPayable,
@@ -31,7 +30,6 @@ pub enum Type {
     #[default]
     AccountsReceivable,
 }
-
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
@@ -45,7 +43,6 @@ pub enum Status {
     Paid,
     Voided,
 }
-
 
 /// Represents a payment applied to an invoice
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -181,7 +178,7 @@ pub struct Invoice {
 
 impl Invoice {
     /// Get the status of the invoice as an enum
-    #[must_use] 
+    #[must_use]
     pub fn status_enum(&self) -> Option<Status> {
         match self.status.as_str() {
             "DRAFT" => Some(Status::Draft),
@@ -516,36 +513,36 @@ impl EntityEndpoint<Invoice, ListParameters> for Invoice {
         ENDPOINT
     }
 
-    async fn get(client: &mut Client, id: Uuid) -> Result<Invoice> {
+    async fn get(client: &Client, id: Uuid) -> Result<Invoice> {
         endpoint_utils::get::<Invoice, ListResponse>(client, ENDPOINT, id, "Invoice").await
     }
 
-    async fn list(client: &mut Client, params: ListParameters) -> Result<Vec<Invoice>> {
+    async fn list(client: &Client, params: ListParameters) -> Result<Vec<Invoice>> {
         endpoint_utils::list::<Invoice, ListResponse, _>(client, ENDPOINT, &params).await
     }
 }
 
 /// Retrieve a list of invoices with filtering.
 #[instrument(skip(client))]
-pub async fn list(client: &mut Client, params: ListParameters) -> Result<Vec<Invoice>> {
+pub async fn list(client: &Client, params: ListParameters) -> Result<Vec<Invoice>> {
     Invoice::list(client, params).await
 }
 
 /// Retrieve a list of all invoices without filtering.
 #[instrument(skip(client))]
-pub async fn list_all(client: &mut Client) -> Result<Vec<Invoice>> {
+pub async fn list_all(client: &Client) -> Result<Vec<Invoice>> {
     Invoice::list(client, ListParameters::default()).await
 }
 
 /// Retrieve a single invoice by it's `invoice_id`.
 #[instrument(skip(client))]
-pub async fn get(client: &mut Client, invoice_id: Uuid) -> Result<Invoice> {
+pub async fn get(client: &Client, invoice_id: Uuid) -> Result<Invoice> {
     Invoice::get(client, invoice_id).await
 }
 
 /// Create one or more invoices.
 #[instrument(skip(client, invoice))]
-pub async fn create(client: &mut Client, invoice: &Builder) -> Result<Invoice> {
+pub async fn create(client: &Client, invoice: &Builder) -> Result<Invoice> {
     let request = InvoiceWrapper {
         invoices: vec![invoice],
     };
@@ -569,7 +566,7 @@ pub async fn create(client: &mut Client, invoice: &Builder) -> Result<Invoice> {
 
 /// Update a specific invoice.
 #[instrument(skip(client, invoice))]
-pub async fn update(client: &mut Client, invoice_id: Uuid, invoice: &Builder) -> Result<Invoice> {
+pub async fn update(client: &Client, invoice_id: Uuid, invoice: &Builder) -> Result<Invoice> {
     let mut updatable_invoice = invoice.clone();
     updatable_invoice.invoice_id = Some(invoice_id);
 
@@ -595,7 +592,7 @@ pub async fn update(client: &mut Client, invoice_id: Uuid, invoice: &Builder) ->
 
 /// Update or create one or more invoices.
 #[instrument(skip(client, invoice))]
-pub async fn update_or_create(client: &mut Client, invoice: &Builder) -> Result<Invoice> {
+pub async fn update_or_create(client: &Client, invoice: &Builder) -> Result<Invoice> {
     let request = InvoiceWrapper {
         invoices: vec![invoice],
     };
@@ -619,7 +616,7 @@ pub async fn update_or_create(client: &mut Client, invoice: &Builder) -> Result<
 
 /// Retrieve a invoice as a PDF file.
 #[instrument(skip(client))]
-pub async fn get_pdf(client: &mut Client, invoice_id: Uuid) -> Result<Vec<u8>> {
+pub async fn get_pdf(client: &Client, invoice_id: Uuid) -> Result<Vec<u8>> {
     let endpoint = XeroEndpoint::Custom(vec![
         "Invoices".to_string(),
         invoice_id.to_string(),
@@ -629,6 +626,7 @@ pub async fn get_pdf(client: &mut Client, invoice_id: Uuid) -> Result<Vec<u8>> {
     let url = endpoint.to_url()?;
     let response = client
         .build_request(reqwest::Method::GET, url)
+        .await
         .send()
         .await?;
 
@@ -649,7 +647,7 @@ pub async fn get_pdf(client: &mut Client, invoice_id: Uuid) -> Result<Vec<u8>> {
 }
 
 /// Get the online invoice URL
-pub async fn get_online_invoice(client: &mut Client, invoice_id: Uuid) -> Result<String> {
+pub async fn get_online_invoice(client: &Client, invoice_id: Uuid) -> Result<String> {
     let endpoint = XeroEndpoint::from_string(format!(
         "https://api.xero.com/api.xro/2.0/Invoices/{invoice_id}/OnlineInvoice"
     ));
@@ -660,7 +658,7 @@ pub async fn get_online_invoice(client: &mut Client, invoice_id: Uuid) -> Result
 
 /// Email the invoice to the contact
 #[instrument(skip(client))]
-pub async fn email(client: &mut Client, invoice_id: Uuid) -> Result<()> {
+pub async fn email(client: &Client, invoice_id: Uuid) -> Result<()> {
     let endpoint = XeroEndpoint::Custom(vec![
         "Invoices".to_string(),
         invoice_id.to_string(),
@@ -676,7 +674,7 @@ pub async fn email(client: &mut Client, invoice_id: Uuid) -> Result<()> {
 }
 
 /// Get history records for an invoice
-pub async fn get_history(client: &mut Client, invoice_id: Uuid) -> Result<Vec<HistoryRecord>> {
+pub async fn get_history(client: &Client, invoice_id: Uuid) -> Result<Vec<HistoryRecord>> {
     let endpoint = XeroEndpoint::from_string(format!(
         "https://api.xero.com/api.xro/2.0/Invoices/{invoice_id}/history"
     ));
@@ -688,7 +686,7 @@ pub async fn get_history(client: &mut Client, invoice_id: Uuid) -> Result<Vec<Hi
 /// Create a history record for a specific invoice.
 #[instrument(skip(client))]
 pub async fn create_history(
-    client: &mut Client,
+    client: &Client,
     invoice_id: Uuid,
     details: &str,
 ) -> Result<Vec<HistoryRecord>> {
@@ -715,7 +713,7 @@ pub async fn create_history(
 }
 
 /// List attachments for an invoice
-pub async fn list_attachments(client: &mut Client, invoice_id: Uuid) -> Result<Vec<Attachment>> {
+pub async fn list_attachments(client: &Client, invoice_id: Uuid) -> Result<Vec<Attachment>> {
     let endpoint = XeroEndpoint::from_string(format!(
         "https://api.xero.com/api.xro/2.0/Invoices/{invoice_id}/Attachments"
     ));
@@ -727,7 +725,7 @@ pub async fn list_attachments(client: &mut Client, invoice_id: Uuid) -> Result<V
 /// Get a specific attachment by ID.
 #[instrument(skip(client))]
 pub async fn get_attachment(
-    client: &mut Client,
+    client: &Client,
     invoice_id: Uuid,
     attachment_id: Uuid,
 ) -> Result<Vec<u8>> {
@@ -741,6 +739,7 @@ pub async fn get_attachment(
     let url = endpoint.to_url()?;
     let response = client
         .build_request(reqwest::Method::GET, url)
+        .await
         .send()
         .await?;
 
@@ -763,7 +762,7 @@ pub async fn get_attachment(
 /// Get an attachment by filename.
 #[instrument(skip(client))]
 pub async fn get_attachment_by_filename(
-    client: &mut Client,
+    client: &Client,
     invoice_id: Uuid,
     filename: &str,
 ) -> Result<Vec<u8>> {
@@ -777,6 +776,7 @@ pub async fn get_attachment_by_filename(
     let url = endpoint.to_url()?;
     let response = client
         .build_request(reqwest::Method::GET, url)
+        .await
         .send()
         .await?;
 
@@ -799,7 +799,7 @@ pub async fn get_attachment_by_filename(
 /// Upload an attachment to an invoice.
 #[instrument(skip(client, attachment_content))]
 pub async fn upload_attachment(
-    client: &mut Client,
+    client: &Client,
     invoice_id: Uuid,
     filename: &str,
     attachment_content: &[u8],
@@ -842,6 +842,7 @@ pub async fn upload_attachment(
     let url = endpoint.to_url()?;
     let response = client
         .build_request(reqwest::Method::PUT, url)
+        .await
         .header(reqwest::header::CONTENT_TYPE, content_type)
         .header(reqwest::header::CONTENT_LENGTH, attachment_content.len())
         .body(attachment_content.to_vec())
@@ -877,7 +878,7 @@ pub async fn upload_attachment(
 /// Update an existing attachment.
 #[instrument(skip(client, attachment_content))]
 pub async fn update_attachment(
-    client: &mut Client,
+    client: &Client,
     invoice_id: Uuid,
     filename: &str,
     attachment_content: &[u8],
@@ -920,6 +921,7 @@ pub async fn update_attachment(
     let url = endpoint.to_url()?;
     let response = client
         .build_request(reqwest::Method::POST, url)
+        .await
         .header(reqwest::header::CONTENT_TYPE, content_type)
         .header(reqwest::header::CONTENT_LENGTH, attachment_content.len())
         .body(attachment_content.to_vec())
@@ -957,7 +959,7 @@ pub async fn update_attachment(
 /// This function is an alias for `upload_attachment` and is kept for backward compatibility.
 #[instrument(skip(client, attachment_content))]
 pub async fn post_attachment(
-    client: &mut Client,
+    client: &Client,
     invoice_id: Uuid,
     attachment_filename: String,
     attachment_content: &[u8],

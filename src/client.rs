@@ -1,6 +1,7 @@
 use core::fmt;
 use std::borrow::Cow;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 
 use oauth2::{
@@ -8,6 +9,7 @@ use oauth2::{
 };
 use reqwest::{IntoUrl, Method, RequestBuilder, StatusCode, header};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use tokio::sync::RwLock;
 use tokio::time::sleep;
 use url::Url;
 use uuid::Uuid;
@@ -64,7 +66,6 @@ pub struct RateLimitInfo {
     pub app_minute_limit_remaining: Option<u32>,
 }
 
-
 impl RateLimitInfo {
     /// Extract rate limit information from response headers
     fn from_response_headers(headers: &header::HeaderMap) -> Self {
@@ -85,7 +86,7 @@ impl RateLimitInfo {
     }
 
     /// Returns true if any of the limits are close to being exhausted
-    #[must_use] 
+    #[must_use]
     pub fn is_near_limit(&self) -> bool {
         self.day_limit_remaining.is_some_and(|v| v < 100)
             || self.minute_limit_remaining.is_some_and(|v| v < 10)
@@ -105,19 +106,21 @@ impl RateLimitInfo {
     }
 }
 
-/// This is the client that is used for interacting with the Xero API. It handles OAuth 2 authentication
-/// and context (the current tenant).
+/// Encapsulates the mutable state that needs interior mutability
 #[derive(Debug)]
-pub struct Client {
+struct TokenState {
     access_token: AccessToken,
     refresh_token: Option<RefreshToken>,
-    tenant_id: Option<Uuid>,
-    /// Information about API rate limits from the latest API response
-    ///
-    /// This field is updated with rate limit information from each successful API call.
-    /// It can be used to monitor when you're approaching rate limits to implement preemptive
-    /// throttling or backoff strategies.
     rate_limit_info: RateLimitInfo,
+}
+
+/// This is the client that is used for interacting with the Xero API. It handles OAuth 2 authentication
+/// and context (the current tenant).
+#[derive(Debug, Clone)]
+pub struct Client {
+    /// Mutable token state wrapped in Arc<RwLock> for interior mutability
+    token_state: Arc<RwLock<TokenState>>,
+    tenant_id: Arc<RwLock<Option<Uuid>>>,
     /// Optional credentials for automatic token refresh on 401 responses
     ///
     /// When set via `with_auto_refresh()`, the client will automatically attempt to
@@ -127,14 +130,16 @@ pub struct Client {
 
 impl Client {
     #[instrument(skip(self))]
-    fn build_http_client(&self) -> reqwest::Client {
+    async fn build_http_client(&self) -> reqwest::Client {
         let mut headers = header::HeaderMap::new();
+        let token_state = self.token_state.read().await;
         headers.append(
             "Authorization",
-            header::HeaderValue::from_str(&format!("Bearer {}", self.access_token.secret()))
+            header::HeaderValue::from_str(&format!("Bearer {}", token_state.access_token.secret()))
                 .unwrap(),
         );
-        if let Some(tenant_id) = self.tenant_id {
+        let tenant_id = self.tenant_id.read().await;
+        if let Some(tenant_id) = *tenant_id {
             headers.append(
                 "Xero-tenant-id",
                 header::HeaderValue::from_str(&tenant_id.to_string()).unwrap(),
@@ -201,10 +206,12 @@ impl Client {
         let refresh_token = token.refresh_token().cloned();
 
         Ok(Self {
-            access_token,
-            refresh_token,
-            tenant_id: None,
-            rate_limit_info: RateLimitInfo::default(),
+            token_state: Arc::new(RwLock::new(TokenState {
+                access_token,
+                refresh_token,
+                rate_limit_info: RateLimitInfo::default(),
+            })),
+            tenant_id: Arc::new(RwLock::new(None)),
             refresh_credentials: None,
         })
     }
@@ -232,20 +239,24 @@ impl Client {
             .await?;
 
         Ok(Self {
-            access_token: token_result.access_token().clone(),
-            refresh_token: token_result.refresh_token().cloned(),
-            tenant_id: None,
-            rate_limit_info: RateLimitInfo::default(),
+            token_state: Arc::new(RwLock::new(TokenState {
+                access_token: token_result.access_token().clone(),
+                refresh_token: token_result.refresh_token().cloned(),
+                rate_limit_info: RateLimitInfo::default(),
+            })),
+            tenant_id: Arc::new(RwLock::new(None)),
             refresh_credentials: None,
         })
     }
 
     /// Refreshes the access token using the refresh token.
-    pub async fn refresh_access_token(&mut self, key_pair: KeyPair) -> Result<()> {
+    pub async fn refresh_access_token(&self, key_pair: KeyPair) -> Result<()> {
         let oauth_client = Self::build_oauth_client(key_pair);
         let http_client = reqwest::Client::new();
 
-        if let Some(refresh_token) = &self.refresh_token {
+        let mut token_state = self.token_state.write().await;
+
+        if let Some(refresh_token) = &token_state.refresh_token {
             let token_result = oauth_client
                 .exchange_refresh_token(refresh_token)
                 .request_async(&http_client)
@@ -253,19 +264,19 @@ impl Client {
                 .map_err(Error::OAuth2)?;
             info!("Successfully refreshed access token");
 
-            self.access_token = token_result.access_token().clone();
+            token_state.access_token = token_result.access_token().clone();
             if let Some(new_refresh_token) = token_result.refresh_token() {
-                self.refresh_token = Some(new_refresh_token.clone());
+                token_state.refresh_token = Some(new_refresh_token.clone());
                 info!("Successfully refreshed refresh token");
             }
-        } else if let Some(refresh_credentials) = &self.refresh_credentials {
+        } else if let Some(_refresh_credentials) = &self.refresh_credentials {
             let token_result = oauth_client
                 .exchange_client_credentials()
                 .request_async(&http_client)
                 .await
                 .map_err(Error::OAuth2)?;
             info!("Successfully refreshed access token");
-            self.access_token = token_result.access_token().clone();
+            token_state.access_token = token_result.access_token().clone();
         } else {
             error!("No refresh token or credentials available");
         }
@@ -273,9 +284,10 @@ impl Client {
     }
 
     /// Sets the tenant ID for this client.
-    pub fn set_tenant(&mut self, tenant_id: Option<Uuid>) {
+    pub async fn set_tenant(&self, tenant_id: Option<Uuid>) {
         trace!(?tenant_id, "updating tenant id");
-        self.tenant_id = tenant_id;
+        let mut current_tenant = self.tenant_id.write().await;
+        *current_tenant = tenant_id;
     }
 
     /// Enable automatic token refresh on 401 responses.
@@ -299,7 +311,7 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-    #[must_use] 
+    #[must_use]
     pub fn with_auto_refresh(mut self, key_pair: KeyPair) -> Self {
         self.refresh_credentials = Some(key_pair);
         self
@@ -308,27 +320,27 @@ impl Client {
     /// Disable automatic token refresh.
     ///
     /// This explicitly removes any stored credentials for automatic refresh.
-    #[must_use] 
+    #[must_use]
     pub fn without_auto_refresh(mut self) -> Self {
         self.refresh_credentials = None;
         self
     }
 
     /// Build a request object with authentication headers.
-    pub(crate) fn build_request<U: IntoUrl + fmt::Debug>(
-        &mut self,
+    pub(crate) async fn build_request<U: IntoUrl + fmt::Debug>(
+        &self,
         method: Method,
         url: U,
     ) -> RequestBuilder {
         self.build_http_client()
+            .await
             .request(method, url)
             .header(header::ACCEPT, "application/json")
     }
 
     /// Get the current rate limit information
-    #[must_use] 
-    pub fn rate_limit_info(&self) -> &RateLimitInfo {
-        &self.rate_limit_info
+    pub async fn rate_limit_info(&self) -> RateLimitInfo {
+        self.token_state.read().await.rate_limit_info.clone()
     }
 
     /// Clear the access token for testing purposes
@@ -336,12 +348,13 @@ impl Client {
     /// # Warning
     /// This is intended for testing only and will invalidate the current access token.
     #[doc(hidden)]
-    pub fn clear_access_token_for_testing(&mut self) {
-        self.access_token = AccessToken::new("invalid_token".to_string());
+    pub async fn clear_access_token_for_testing(&self) {
+        let mut token_state = self.token_state.write().await;
+        token_state.access_token = AccessToken::new("invalid_token".to_string());
     }
 
     /// Execute a GET request with automatic retry for rate limit errors and token expiry
-    async fn execute_get<T, Q>(&mut self, url: Url, query: &Q) -> Result<T>
+    async fn execute_get<T, Q>(&self, url: Url, query: &Q) -> Result<T>
     where
         T: DeserializeOwned,
         Q: Serialize,
@@ -353,6 +366,7 @@ impl Client {
             // Build and execute the request
             let response = self
                 .build_request(Method::GET, url.clone())
+                .await
                 .query(query)
                 .send()
                 .await;
@@ -364,10 +378,13 @@ impl Client {
                         // Check for token expiry
                         if let Error::API(ref api_err) = e
                             && !token_refreshed
-                                && matches!(api_err.error, error::ErrorType::UnauthorisedException)
-                                && (self.refresh_credentials.is_some()
-                                    || self.refresh_token.is_some())
-                            {
+                            && matches!(api_err.error, error::ErrorType::UnauthorisedException)
+                        {
+                            // Check if we have refresh credentials or token
+                            let has_refresh_capability = self.refresh_credentials.is_some()
+                                || self.token_state.read().await.refresh_token.is_some();
+
+                            if has_refresh_capability && self.refresh_credentials.is_some() {
                                 tracing::debug!("Token expired, attempting automatic refresh");
                                 let key_pair = self.refresh_credentials.clone().unwrap();
 
@@ -389,23 +406,25 @@ impl Client {
                                     }
                                 }
                             }
+                        }
                         // Check for rate limiting
                         if let Error::RateLimitExceeded { retry_after, .. } = e
-                            && attempts < MAX_RETRY_ATTEMPTS {
-                                attempts += 1;
-                                let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
+                            && attempts < MAX_RETRY_ATTEMPTS
+                        {
+                            attempts += 1;
+                            let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
 
-                                tracing::warn!(
-                                    "Rate limit exceeded (attempt {}/{}), waiting for {:?} before retrying",
-                                    attempts,
-                                    MAX_RETRY_ATTEMPTS,
-                                    wait_time
-                                );
+                            tracing::warn!(
+                                "Rate limit exceeded (attempt {}/{}), waiting for {:?} before retrying",
+                                attempts,
+                                MAX_RETRY_ATTEMPTS,
+                                wait_time
+                            );
 
-                                // Wait for the specified time before retrying
-                                sleep(wait_time).await;
-                                continue;
-                            }
+                            // Wait for the specified time before retrying
+                            sleep(wait_time).await;
+                            continue;
+                        }
                         return Err(e);
                     }
                 },
@@ -415,7 +434,7 @@ impl Client {
     }
 
     /// Execute a POST request with automatic retry for rate limit errors and token expiry
-    async fn execute_post<T, B>(&mut self, url: Url, body: &B) -> Result<T>
+    async fn execute_post<T, B>(&self, url: Url, body: &B) -> Result<T>
     where
         T: DeserializeOwned,
         B: Serialize,
@@ -427,6 +446,7 @@ impl Client {
             // Build and execute the request
             let response = self
                 .build_request(Method::POST, url.clone())
+                .await
                 .json(body)
                 .send()
                 .await;
@@ -438,10 +458,13 @@ impl Client {
                         // Check for token expiry
                         if let Error::API(ref api_err) = e
                             && !token_refreshed
-                                && matches!(api_err.error, error::ErrorType::UnauthorisedException)
-                                && (self.refresh_credentials.is_some()
-                                    || self.refresh_token.is_some())
-                            {
+                            && matches!(api_err.error, error::ErrorType::UnauthorisedException)
+                        {
+                            // Check if we have refresh credentials or token
+                            let has_refresh_capability = self.refresh_credentials.is_some()
+                                || self.token_state.read().await.refresh_token.is_some();
+
+                            if has_refresh_capability && self.refresh_credentials.is_some() {
                                 tracing::debug!("Token expired, attempting automatic refresh");
                                 let key_pair = self.refresh_credentials.clone().unwrap();
 
@@ -463,23 +486,25 @@ impl Client {
                                     }
                                 }
                             }
+                        }
                         // Check for rate limiting
                         if let Error::RateLimitExceeded { retry_after, .. } = e
-                            && attempts < MAX_RETRY_ATTEMPTS {
-                                attempts += 1;
-                                let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
+                            && attempts < MAX_RETRY_ATTEMPTS
+                        {
+                            attempts += 1;
+                            let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
 
-                                tracing::warn!(
-                                    "Rate limit exceeded (attempt {}/{}), waiting for {:?} before retrying",
-                                    attempts,
-                                    MAX_RETRY_ATTEMPTS,
-                                    wait_time
-                                );
+                            tracing::warn!(
+                                "Rate limit exceeded (attempt {}/{}), waiting for {:?} before retrying",
+                                attempts,
+                                MAX_RETRY_ATTEMPTS,
+                                wait_time
+                            );
 
-                                // Wait for the specified time before retrying
-                                sleep(wait_time).await;
-                                continue;
-                            }
+                            // Wait for the specified time before retrying
+                            sleep(wait_time).await;
+                            continue;
+                        }
                         return Err(e);
                     }
                 },
@@ -489,7 +514,7 @@ impl Client {
     }
 
     /// Execute a PUT request with automatic retry for rate limit errors and token expiry
-    async fn execute_put<T, B>(&mut self, url: Url, body: &B) -> Result<T>
+    async fn execute_put<T, B>(&self, url: Url, body: &B) -> Result<T>
     where
         T: DeserializeOwned,
         B: Serialize,
@@ -501,6 +526,7 @@ impl Client {
             // Build and execute the request
             let response = self
                 .build_request(Method::PUT, url.clone())
+                .await
                 .json(body)
                 .send()
                 .await;
@@ -512,10 +538,13 @@ impl Client {
                         // Check for token expiry
                         if let Error::API(ref api_err) = e
                             && !token_refreshed
-                                && matches!(api_err.error, error::ErrorType::UnauthorisedException)
-                                && (self.refresh_credentials.is_some()
-                                    || self.refresh_token.is_some())
-                            {
+                            && matches!(api_err.error, error::ErrorType::UnauthorisedException)
+                        {
+                            // Check if we have refresh credentials or token
+                            let has_refresh_capability = self.refresh_credentials.is_some()
+                                || self.token_state.read().await.refresh_token.is_some();
+
+                            if has_refresh_capability && self.refresh_credentials.is_some() {
                                 tracing::debug!("Token expired, attempting automatic refresh");
                                 let key_pair = self.refresh_credentials.clone().unwrap();
 
@@ -537,23 +566,25 @@ impl Client {
                                     }
                                 }
                             }
+                        }
                         // Check for rate limiting
                         if let Error::RateLimitExceeded { retry_after, .. } = e
-                            && attempts < MAX_RETRY_ATTEMPTS {
-                                attempts += 1;
-                                let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
+                            && attempts < MAX_RETRY_ATTEMPTS
+                        {
+                            attempts += 1;
+                            let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
 
-                                tracing::warn!(
-                                    "Rate limit exceeded (attempt {}/{}), waiting for {:?} before retrying",
-                                    attempts,
-                                    MAX_RETRY_ATTEMPTS,
-                                    wait_time
-                                );
+                            tracing::warn!(
+                                "Rate limit exceeded (attempt {}/{}), waiting for {:?} before retrying",
+                                attempts,
+                                MAX_RETRY_ATTEMPTS,
+                                wait_time
+                            );
 
-                                // Wait for the specified time before retrying
-                                sleep(wait_time).await;
-                                continue;
-                            }
+                            // Wait for the specified time before retrying
+                            sleep(wait_time).await;
+                            continue;
+                        }
                         return Err(e);
                     }
                 },
@@ -563,13 +594,17 @@ impl Client {
     }
 
     /// Execute a DELETE request with automatic retry for rate limit errors and token expiry
-    async fn execute_delete(&mut self, url: Url) -> Result<()> {
+    async fn execute_delete(&self, url: Url) -> Result<()> {
         let mut attempts = 0;
         let mut token_refreshed = false;
 
         loop {
             // Build and execute the request
-            let response = self.build_request(Method::DELETE, url.clone()).send().await;
+            let response = self
+                .build_request(Method::DELETE, url.clone())
+                .await
+                .send()
+                .await;
 
             match response {
                 Ok(response) => {
@@ -594,9 +629,13 @@ impl Client {
                     // Check for token expiry
                     if let Error::API(ref api_err) = error
                         && !token_refreshed
-                            && matches!(api_err.error, error::ErrorType::UnauthorisedException)
-                            && (self.refresh_credentials.is_some() || self.refresh_token.is_some())
-                        {
+                        && matches!(api_err.error, error::ErrorType::UnauthorisedException)
+                    {
+                        // Check if we have refresh credentials or token
+                        let has_refresh_capability = self.refresh_credentials.is_some()
+                            || self.token_state.read().await.refresh_token.is_some();
+
+                        if has_refresh_capability && self.refresh_credentials.is_some() {
                             tracing::debug!("Token expired, attempting automatic refresh");
                             let key_pair = self.refresh_credentials.clone().unwrap();
 
@@ -618,23 +657,25 @@ impl Client {
                                 }
                             }
                         }
+                    }
                     // Check for rate limiting
                     if let Error::RateLimitExceeded { retry_after, .. } = error
-                        && attempts < MAX_RETRY_ATTEMPTS {
-                            attempts += 1;
-                            let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
+                        && attempts < MAX_RETRY_ATTEMPTS
+                    {
+                        attempts += 1;
+                        let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
 
-                            tracing::warn!(
-                                "Rate limit exceeded (attempt {}/{}), waiting for {:?} before retrying",
-                                attempts,
-                                MAX_RETRY_ATTEMPTS,
-                                wait_time
-                            );
+                        tracing::warn!(
+                            "Rate limit exceeded (attempt {}/{}), waiting for {:?} before retrying",
+                            attempts,
+                            MAX_RETRY_ATTEMPTS,
+                            wait_time
+                        );
 
-                            // Wait for the specified time before retrying
-                            sleep(wait_time).await;
-                            continue;
-                        }
+                        // Wait for the specified time before retrying
+                        sleep(wait_time).await;
+                        continue;
+                    }
                     return Err(error);
                 }
                 Err(e) => return Err(e.into()),
@@ -650,7 +691,7 @@ impl Client {
         U: AsRef<str> + fmt::Debug + Clone,
         T: Serialize + Sized + fmt::Debug,
     >(
-        &mut self,
+        &self,
         url: U,
         query: &T,
     ) -> Result<R> {
@@ -673,7 +714,7 @@ impl Client {
     /// Perform a `GET` request against the API using a typed `XeroEndpoint` with automatic retry.
     #[instrument(skip(self, query))]
     pub async fn get_endpoint<'a, R: DeserializeOwned, T: Serialize + Sized + fmt::Debug>(
-        &mut self,
+        &self,
         endpoint: XeroEndpoint,
         query: &T,
     ) -> Result<R> {
@@ -690,7 +731,7 @@ impl Client {
         U: AsRef<str> + fmt::Debug + Clone,
         T: Serialize + Sized,
     >(
-        &mut self,
+        &self,
         url: U,
         data: &T,
     ) -> Result<R> {
@@ -718,7 +759,7 @@ impl Client {
         U: AsRef<str> + fmt::Debug + Clone,
         T: Serialize + Sized + fmt::Debug,
     >(
-        &mut self,
+        &self,
         url: U,
         data: &T,
     ) -> Result<R> {
@@ -741,7 +782,7 @@ impl Client {
     /// Perform a `POST` request against the API using a typed `XeroEndpoint` with automatic retry.
     #[instrument(skip(self, data))]
     pub async fn post_endpoint<'a, R: DeserializeOwned, T: Serialize + Sized + fmt::Debug>(
-        &mut self,
+        &self,
         endpoint: XeroEndpoint,
         data: &T,
     ) -> Result<R> {
@@ -753,7 +794,7 @@ impl Client {
     /// Perform a `PUT` request against the API using a typed `XeroEndpoint` with automatic retry.
     #[instrument(skip(self, data))]
     pub async fn put_endpoint<'a, R: DeserializeOwned, T: Serialize + Sized>(
-        &mut self,
+        &self,
         endpoint: XeroEndpoint,
         data: &T,
     ) -> Result<R> {
@@ -764,7 +805,7 @@ impl Client {
 
     /// Perform an authenticated `DELETE` request against the API with automatic retry.
     #[instrument(skip(self))]
-    pub async fn delete<U: AsRef<str> + fmt::Debug + Clone>(&mut self, url: U) -> Result<()> {
+    pub async fn delete<U: AsRef<str> + fmt::Debug + Clone>(&self, url: U) -> Result<()> {
         trace!(?url, "making DELETE request");
 
         // Handle relative URLs by prepending the base URL if needed
@@ -783,7 +824,7 @@ impl Client {
 
     /// Perform a `DELETE` request against the API using a typed `XeroEndpoint` with automatic retry.
     #[instrument(skip(self))]
-    pub async fn delete_endpoint(&mut self, endpoint: XeroEndpoint) -> Result<()> {
+    pub async fn delete_endpoint(&self, endpoint: XeroEndpoint) -> Result<()> {
         trace!(endpoint = ?endpoint, "making DELETE request with endpoint");
         let url = endpoint.to_url()?;
         self.execute_delete(url).await
@@ -989,55 +1030,55 @@ impl Client {
 
     /// Access the contacts API
     #[must_use]
-    pub fn contacts(&mut self) -> ContactsApi<'_> {
+    pub fn contacts(&self) -> ContactsApi<'_> {
         ContactsApi { client: self }
     }
 
     /// Access the invoices API
     #[must_use]
-    pub fn invoices(&mut self) -> InvoicesApi<'_> {
+    pub fn invoices(&self) -> InvoicesApi<'_> {
         InvoicesApi { client: self }
     }
 
     /// Access the purchase orders API
     #[must_use]
-    pub fn purchase_orders(&mut self) -> PurchaseOrdersApi<'_> {
+    pub fn purchase_orders(&self) -> PurchaseOrdersApi<'_> {
         PurchaseOrdersApi { client: self }
     }
 
     /// Access the quotes API
     #[must_use]
-    pub fn quotes(&mut self) -> QuotesApi<'_> {
+    pub fn quotes(&self) -> QuotesApi<'_> {
         QuotesApi { client: self }
     }
 
     /// Access the timesheets API
     #[must_use]
-    pub fn timesheets(&mut self) -> TimesheetsApi<'_> {
+    pub fn timesheets(&self) -> TimesheetsApi<'_> {
         TimesheetsApi { client: self }
     }
 
     /// Access the employees API
     #[must_use]
-    pub fn employees(&mut self) -> EmployeesApi<'_> {
+    pub fn employees(&self) -> EmployeesApi<'_> {
         EmployeesApi { client: self }
     }
 
     /// Access the earnings rates API
     #[must_use]
-    pub fn earnings_rates(&mut self) -> EarningsRatesApi<'_> {
+    pub fn earnings_rates(&self) -> EarningsRatesApi<'_> {
         EarningsRatesApi { client: self }
     }
 
     /// Access the pay calendars API
     #[must_use]
-    pub fn pay_calendars(&mut self) -> PayCalendarsApi<'_> {
+    pub fn pay_calendars(&self) -> PayCalendarsApi<'_> {
         PayCalendarsApi { client: self }
     }
 
     /// Access the items API
     #[must_use]
-    pub fn items(&mut self) -> ItemsApi<'_> {
+    pub fn items(&self) -> ItemsApi<'_> {
         ItemsApi { client: self }
     }
 }
@@ -1045,13 +1086,13 @@ impl Client {
 /// API handler for Contacts endpoints
 #[derive(Debug)]
 pub struct ContactsApi<'a> {
-    client: &'a mut Client,
+    client: &'a Client,
 }
 
 impl ContactsApi<'_> {
     /// Retrieve a list of contacts
     #[instrument(skip(self))]
-    pub async fn list(&mut self) -> Result<Vec<Contact>> {
+    pub async fn list(&self) -> Result<Vec<Contact>> {
         let empty_vec: Vec<String> = Vec::new();
         let response: contact::ListResponse = self
             .client
@@ -1062,7 +1103,7 @@ impl ContactsApi<'_> {
 
     /// Retrieve a single contact by ID
     #[instrument(skip(self))]
-    pub async fn get(&mut self, contact_id: Uuid) -> Result<Contact> {
+    pub async fn get(&self, contact_id: Uuid) -> Result<Contact> {
         let endpoint = XeroEndpoint::Contact(contact_id);
         let empty_vec: Vec<String> = Vec::new();
         let response: contact::ListResponse = self
@@ -1081,13 +1122,13 @@ impl ContactsApi<'_> {
 /// API handler for Invoices endpoints
 #[derive(Debug)]
 pub struct InvoicesApi<'a> {
-    client: &'a mut Client,
+    client: &'a Client,
 }
 
 impl InvoicesApi<'_> {
     /// List invoices with optional parameters
     #[instrument(skip(self))]
-    pub async fn list(&mut self, parameters: invoice::ListParameters) -> Result<Vec<Invoice>> {
+    pub async fn list(&self, parameters: invoice::ListParameters) -> Result<Vec<Invoice>> {
         let response: invoice::ListResponse = self
             .client
             .get_endpoint(XeroEndpoint::Invoices, &parameters)
@@ -1097,13 +1138,13 @@ impl InvoicesApi<'_> {
 
     /// List all invoices without any filtering
     #[instrument(skip(self))]
-    pub async fn list_all(&mut self) -> Result<Vec<Invoice>> {
+    pub async fn list_all(&self) -> Result<Vec<Invoice>> {
         self.list(invoice::ListParameters::default()).await
     }
 
     /// Get a single invoice by ID
     #[instrument(skip(self))]
-    pub async fn get(&mut self, invoice_id: Uuid) -> Result<Invoice> {
+    pub async fn get(&self, invoice_id: Uuid) -> Result<Invoice> {
         let endpoint = XeroEndpoint::Invoice(invoice_id);
         let empty_tuple = ();
         let response: invoice::ListResponse = self
@@ -1120,7 +1161,7 @@ impl InvoicesApi<'_> {
 
     /// Create a new invoice
     #[instrument(skip(self, invoice))]
-    pub async fn create(&mut self, invoice: &invoice::Builder) -> Result<Invoice> {
+    pub async fn create(&self, invoice: &invoice::Builder) -> Result<Invoice> {
         // Create a request wrapper
         #[derive(Serialize, Debug)]
         #[serde(rename_all = "PascalCase")]
@@ -1162,38 +1203,38 @@ impl InvoicesApi<'_> {
 
     /// Update or create an invoice
     #[instrument(skip(self, invoice))]
-    pub async fn update_or_create(&mut self, invoice: &invoice::Builder) -> Result<Invoice> {
+    pub async fn update_or_create(&self, invoice: &invoice::Builder) -> Result<Invoice> {
         invoice::update_or_create(self.client, invoice).await
     }
 
     /// Get the invoice as a PDF
     #[instrument(skip(self))]
-    pub async fn get_pdf(&mut self, invoice_id: Uuid) -> Result<Vec<u8>> {
+    pub async fn get_pdf(&self, invoice_id: Uuid) -> Result<Vec<u8>> {
         invoice::get_pdf(self.client, invoice_id).await
     }
 
     /// Get an online invoice URL
     #[instrument(skip(self))]
-    pub async fn get_online_invoice(&mut self, invoice_id: Uuid) -> Result<String> {
+    pub async fn get_online_invoice(&self, invoice_id: Uuid) -> Result<String> {
         invoice::get_online_invoice(self.client, invoice_id).await
     }
 
     /// Email the invoice to the contact
     #[instrument(skip(self))]
-    pub async fn email(&mut self, invoice_id: Uuid) -> Result<()> {
+    pub async fn email(&self, invoice_id: Uuid) -> Result<()> {
         invoice::email(self.client, invoice_id).await
     }
 
     /// Get the history for an invoice
     #[instrument(skip(self))]
-    pub async fn get_history(&mut self, invoice_id: Uuid) -> Result<Vec<invoice::HistoryRecord>> {
+    pub async fn get_history(&self, invoice_id: Uuid) -> Result<Vec<invoice::HistoryRecord>> {
         invoice::get_history(self.client, invoice_id).await
     }
 
     /// Create a history record for an invoice
     #[instrument(skip(self))]
     pub async fn create_history(
-        &mut self,
+        &self,
         invoice_id: Uuid,
         details: &str,
     ) -> Result<Vec<invoice::HistoryRecord>> {
@@ -1202,7 +1243,7 @@ impl InvoicesApi<'_> {
 
     /// List attachments for an invoice
     #[instrument(skip(self))]
-    pub async fn list_attachments(&mut self, invoice_id: Uuid) -> Result<Vec<invoice::Attachment>> {
+    pub async fn list_attachments(&self, invoice_id: Uuid) -> Result<Vec<invoice::Attachment>> {
         invoice::list_attachments(self.client, invoice_id).await
     }
 
@@ -1252,13 +1293,13 @@ impl InvoicesApi<'_> {
 /// API handler for Purchase Orders endpoints
 #[derive(Debug)]
 pub struct PurchaseOrdersApi<'a> {
-    client: &'a mut Client,
+    client: &'a Client,
 }
 
 impl PurchaseOrdersApi<'_> {
     /// Retrieve a list of purchase orders
     #[instrument(skip(self))]
-    pub async fn list(&mut self) -> Result<Vec<PurchaseOrder>> {
+    pub async fn list(&self) -> Result<Vec<PurchaseOrder>> {
         let empty_vec: Vec<String> = Vec::new();
         let response: purchase_order::ListResponse = self
             .client
@@ -1269,7 +1310,7 @@ impl PurchaseOrdersApi<'_> {
 
     /// Retrieve a single purchase order by ID
     #[instrument(skip(self))]
-    pub async fn get(&mut self, purchase_order_id: Uuid) -> Result<PurchaseOrder> {
+    pub async fn get(&self, purchase_order_id: Uuid) -> Result<PurchaseOrder> {
         let endpoint = Url::from_str(purchase_order::ENDPOINT)
             .and_then(|endpoint| endpoint.join(&purchase_order_id.to_string()))
             .map_err(|_| Error::InvalidEndpoint)?;
@@ -1292,7 +1333,7 @@ impl PurchaseOrdersApi<'_> {
 
     /// Create a new purchase order
     #[instrument(skip(self, builder))]
-    pub async fn create(&mut self, builder: &purchase_order::Builder) -> Result<PurchaseOrder> {
+    pub async fn create(&self, builder: &purchase_order::Builder) -> Result<PurchaseOrder> {
         let result: MutationResponse = self.client.put(purchase_order::ENDPOINT, builder).await?;
         result
             .data
@@ -1312,56 +1353,56 @@ impl PurchaseOrdersApi<'_> {
 /// API handler for Quotes endpoints
 #[derive(Debug)]
 pub struct QuotesApi<'a> {
-    client: &'a mut Client,
+    client: &'a Client,
 }
 
 impl QuotesApi<'_> {
     /// Retrieve a list of quotes with filters
     #[instrument(skip(self, parameters))]
-    pub async fn list(&mut self, parameters: quote::ListParameters) -> Result<Vec<Quote>> {
+    pub async fn list(&self, parameters: quote::ListParameters) -> Result<Vec<Quote>> {
         quote::list(self.client, parameters).await
     }
 
     /// Retrieve a list of all quotes without filtering
     #[instrument(skip(self))]
-    pub async fn list_all(&mut self) -> Result<Vec<Quote>> {
+    pub async fn list_all(&self) -> Result<Vec<Quote>> {
         quote::list_all(self.client).await
     }
 
     /// Retrieve a single quote by ID
     #[instrument(skip(self))]
-    pub async fn get(&mut self, quote_id: Uuid) -> Result<Quote> {
+    pub async fn get(&self, quote_id: Uuid) -> Result<Quote> {
         quote::get(self.client, quote_id).await
     }
 
     /// Create a new quote
     #[instrument(skip(self, quote))]
-    pub async fn create(&mut self, quote: &quote::QuoteBuilder) -> Result<Quote> {
+    pub async fn create(&self, quote: &quote::QuoteBuilder) -> Result<Quote> {
         quote::create(self.client, quote).await
     }
 
     /// Update or create a quote
     #[instrument(skip(self, quote))]
-    pub async fn update_or_create(&mut self, quote: &quote::QuoteBuilder) -> Result<Quote> {
+    pub async fn update_or_create(&self, quote: &quote::QuoteBuilder) -> Result<Quote> {
         quote::update_or_create(self.client, quote).await
     }
 
     /// Update a specific quote
     #[instrument(skip(self, quote))]
-    pub async fn update(&mut self, quote_id: Uuid, quote: &quote::QuoteBuilder) -> Result<Quote> {
+    pub async fn update(&self, quote_id: Uuid, quote: &quote::QuoteBuilder) -> Result<Quote> {
         quote::update(self.client, quote_id, quote).await
     }
 
     /// Get the history records for a quote
     #[instrument(skip(self))]
-    pub async fn get_history(&mut self, quote_id: Uuid) -> Result<Vec<quote::HistoryRecord>> {
+    pub async fn get_history(&self, quote_id: Uuid) -> Result<Vec<quote::HistoryRecord>> {
         quote::get_history(self.client, quote_id).await
     }
 
     /// Create a history record for a quote
     #[instrument(skip(self))]
     pub async fn create_history(
-        &mut self,
+        &self,
         quote_id: Uuid,
         details: &str,
     ) -> Result<Vec<quote::HistoryRecord>> {
@@ -1370,26 +1411,26 @@ impl QuotesApi<'_> {
 
     /// Get a quote as PDF
     #[instrument(skip(self))]
-    pub async fn get_pdf(&mut self, quote_id: Uuid) -> Result<Vec<u8>> {
+    pub async fn get_pdf(&self, quote_id: Uuid) -> Result<Vec<u8>> {
         quote::get_pdf(self.client, quote_id).await
     }
 
     /// List all attachments for a quote
     #[instrument(skip(self))]
-    pub async fn list_attachments(&mut self, quote_id: Uuid) -> Result<Vec<quote::Attachment>> {
+    pub async fn list_attachments(&self, quote_id: Uuid) -> Result<Vec<quote::Attachment>> {
         quote::list_attachments(self.client, quote_id).await
     }
 
     /// Get a specific attachment by ID
     #[instrument(skip(self))]
-    pub async fn get_attachment(&mut self, quote_id: Uuid, attachment_id: Uuid) -> Result<Vec<u8>> {
+    pub async fn get_attachment(&self, quote_id: Uuid, attachment_id: Uuid) -> Result<Vec<u8>> {
         quote::get_attachment(self.client, quote_id, attachment_id).await
     }
 
     /// Get an attachment by filename
     #[instrument(skip(self))]
     pub async fn get_attachment_by_filename(
-        &mut self,
+        &self,
         quote_id: Uuid,
         filename: &str,
     ) -> Result<Vec<u8>> {
@@ -1422,7 +1463,7 @@ impl QuotesApi<'_> {
 /// API handler for Timesheets endpoints
 #[derive(Debug)]
 pub struct TimesheetsApi<'a> {
-    client: &'a mut Client,
+    client: &'a Client,
 }
 
 impl TimesheetsApi<'_> {
@@ -1434,7 +1475,7 @@ impl TimesheetsApi<'_> {
     /// * `modified_after` - Optional ISO8601 timestamp (format: yyyy-mm-ddThh:mm:ss) to filter by modification date
     #[instrument(skip(self, parameters, modified_after))]
     pub async fn list(
-        &mut self,
+        &self,
         parameters: Option<timesheet::ListParameters>,
         modified_after: Option<String>,
     ) -> Result<Vec<Timesheet>> {
@@ -1443,25 +1484,25 @@ impl TimesheetsApi<'_> {
 
     /// List all timesheets without any filtering
     #[instrument(skip(self))]
-    pub async fn list_all(&mut self) -> Result<Vec<Timesheet>> {
+    pub async fn list_all(&self) -> Result<Vec<Timesheet>> {
         self.list(None::<timesheet::ListParameters>, None).await
     }
 
     /// Retrieve a single timesheet by ID
     #[instrument(skip(self))]
-    pub async fn get(&mut self, timesheet_id: Uuid) -> Result<Timesheet> {
+    pub async fn get(&self, timesheet_id: Uuid) -> Result<Timesheet> {
         Timesheet::get(self.client, timesheet_id).await
     }
 
     /// Create a new timesheet
     #[instrument(skip(self, timesheet))]
-    pub async fn create(&mut self, timesheet: &PostTimesheet) -> Result<Timesheet> {
+    pub async fn create(&self, timesheet: &PostTimesheet) -> Result<Timesheet> {
         Timesheet::post(self.client, timesheet).await
     }
 
     /// Update a timesheet
     #[instrument(skip(self, timesheet))]
-    pub async fn update(&mut self, timesheet: &Timesheet) -> Result<Timesheet> {
+    pub async fn update(&self, timesheet: &Timesheet) -> Result<Timesheet> {
         Timesheet::update(self.client, timesheet).await
     }
 }
@@ -1469,13 +1510,13 @@ impl TimesheetsApi<'_> {
 /// API handler for Employees endpoints
 #[derive(Debug)]
 pub struct EmployeesApi<'a> {
-    client: &'a mut Client,
+    client: &'a Client,
 }
 
 impl EmployeesApi<'_> {
     /// Retrieve a list of employees
     #[instrument(skip(self))]
-    pub async fn list(&mut self) -> Result<Vec<Employee>> {
+    pub async fn list(&self) -> Result<Vec<Employee>> {
         let empty_vec: Vec<String> = Vec::new();
         let response: employee::ListResponse =
             self.client.get(employee::ENDPOINT, &empty_vec).await?;
@@ -1486,13 +1527,13 @@ impl EmployeesApi<'_> {
 /// API handler for Earnings Rates endpoints
 #[derive(Debug)]
 pub struct EarningsRatesApi<'a> {
-    client: &'a mut Client,
+    client: &'a Client,
 }
 
 impl EarningsRatesApi<'_> {
     /// Retrieve a list of earnings rates
     #[instrument(skip(self))]
-    pub async fn list(&mut self) -> Result<Vec<EarningsRate>> {
+    pub async fn list(&self) -> Result<Vec<EarningsRate>> {
         #[derive(Deserialize)]
         #[serde(rename_all = "PascalCase")]
         struct PayItems {
@@ -1518,7 +1559,7 @@ impl EarningsRatesApi<'_> {
 ///
 /// This API provides methods for listing, retrieving, and creating pay calendars.
 pub struct PayCalendarsApi<'a> {
-    client: &'a mut Client,
+    client: &'a Client,
 }
 
 impl PayCalendarsApi<'_> {
@@ -1530,7 +1571,7 @@ impl PayCalendarsApi<'_> {
     ///
     /// Returns an error if the API request fails.
     #[instrument(skip(self))]
-    pub async fn list(&mut self) -> Result<Vec<PayCalendar>> {
+    pub async fn list(&self) -> Result<Vec<PayCalendar>> {
         let url = "https://api.xero.com/payroll.xro/1.0/PayrollCalendars";
         let response: pay_calendar::PayCalendarResponse = self.client.get(url, &()).await?;
         Ok(response.payroll_calendars)
@@ -1548,7 +1589,7 @@ impl PayCalendarsApi<'_> {
     ///
     /// Returns an error if the pay calendar is not found or if the API request fails.
     #[instrument(skip(self))]
-    pub async fn get(&mut self, pay_calendar_id: Uuid) -> Result<PayCalendar> {
+    pub async fn get(&self, pay_calendar_id: Uuid) -> Result<PayCalendar> {
         let url =
             format!("https://api.xero.com/payroll.xro/1.0/PayrollCalendars/{pay_calendar_id}");
         let response: pay_calendar::PayCalendarResponse = self.client.get(&url, &()).await?;
@@ -1604,49 +1645,49 @@ impl PayCalendarsApi<'_> {
 /// API handler for Items endpoints
 #[derive(Debug)]
 pub struct ItemsApi<'a> {
-    client: &'a mut Client,
+    client: &'a Client,
 }
 
 impl ItemsApi<'_> {
     /// Retrieve a list of items with optional filtering
     #[instrument(skip(self, parameters))]
-    pub async fn list(&mut self, parameters: item::ListParameters) -> Result<Vec<Item>> {
+    pub async fn list(&self, parameters: item::ListParameters) -> Result<Vec<Item>> {
         item::list(self.client, parameters).await
     }
 
     /// List all items without any filtering
     #[instrument(skip(self))]
-    pub async fn list_all(&mut self) -> Result<Vec<Item>> {
+    pub async fn list_all(&self) -> Result<Vec<Item>> {
         item::list_all(self.client).await
     }
 
     /// Retrieve a single item by ID
     #[instrument(skip(self))]
-    pub async fn get(&mut self, item_id: Uuid) -> Result<Item> {
+    pub async fn get(&self, item_id: Uuid) -> Result<Item> {
         item::get(self.client, item_id).await
     }
 
     /// Retrieve a single item by code
     #[instrument(skip(self))]
-    pub async fn get_by_code(&mut self, code: &str) -> Result<Item> {
+    pub async fn get_by_code(&self, code: &str) -> Result<Item> {
         item::get_by_code(self.client, code).await
     }
 
     /// Create a single item
     #[instrument(skip(self, item))]
-    pub async fn create(&mut self, item: &item::Builder) -> Result<Item> {
+    pub async fn create(&self, item: &item::Builder) -> Result<Item> {
         item::create_single(self.client, item).await
     }
 
     /// Create multiple items
     #[instrument(skip(self, items))]
-    pub async fn create_multiple(&mut self, items: &[item::Builder]) -> Result<Vec<Item>> {
+    pub async fn create_multiple(&self, items: &[item::Builder]) -> Result<Vec<Item>> {
         item::create(self.client, items).await
     }
 
     /// Update or create a single item
     #[instrument(skip(self, item))]
-    pub async fn update_or_create(&mut self, item: &item::Builder) -> Result<Item> {
+    pub async fn update_or_create(&self, item: &item::Builder) -> Result<Item> {
         let items = item::update_or_create(self.client, &[item.clone()]).await?;
         items.into_iter().next().ok_or(Error::NotFound {
             entity: "Item".to_string(),
@@ -1667,26 +1708,26 @@ impl ItemsApi<'_> {
 
     /// Update a specific item
     #[instrument(skip(self, item))]
-    pub async fn update(&mut self, item_id: Uuid, item: &item::Builder) -> Result<Item> {
+    pub async fn update(&self, item_id: Uuid, item: &item::Builder) -> Result<Item> {
         item::update(self.client, item_id, item).await
     }
 
     /// Delete a specific item
     #[instrument(skip(self))]
-    pub async fn delete(&mut self, item_id: Uuid) -> Result<()> {
+    pub async fn delete(&self, item_id: Uuid) -> Result<()> {
         item::delete(self.client, item_id).await
     }
 
     /// Get the history for an item
     #[instrument(skip(self))]
-    pub async fn get_history(&mut self, item_id: Uuid) -> Result<Vec<item::HistoryRecord>> {
+    pub async fn get_history(&self, item_id: Uuid) -> Result<Vec<item::HistoryRecord>> {
         item::get_history(self.client, item_id).await
     }
 
     /// Create a history record for an item
     #[instrument(skip(self))]
     pub async fn create_history(
-        &mut self,
+        &self,
         item_id: Uuid,
         details: &str,
     ) -> Result<Vec<item::HistoryRecord>> {

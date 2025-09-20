@@ -28,15 +28,15 @@ async fn main() -> Result<()> {
     ]);
 
     // Create a client with client credentials and required scopes
-    let mut client =
+    let client =
         Client::from_client_credentials(KeyPair::new(client_id, Some(client_secret)), Some(scope))
             .await?;
 
     // Get tenant ID from connections
-    let connections = xero_rs::entities::connection::list(&mut client).await?;
+    let connections = xero_rs::entities::connection::list(&client).await?;
     info!("found client connections: {:#?}", connections);
     let tenant_id = connections.first().expect("No connections found").tenant_id;
-    client.set_tenant(Some(tenant_id));
+    client.set_tenant(Some(tenant_id)).await;
 
     // Now you can use the client to access the API
     // For example, let's try to list timesheets

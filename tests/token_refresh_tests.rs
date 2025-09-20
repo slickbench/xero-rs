@@ -16,14 +16,16 @@ async fn test_automatic_token_refresh_succeeds() -> Result<()> {
     let key_pair = KeyPair::new(client_id, Some(client_secret));
 
     // Create client with auto-refresh enabled
-    let mut client =
+    let client =
         Client::from_client_credentials(key_pair.clone(), Some(xero_rs::Scope::all_accounting()))
             .await
             .map_err(|e| miette::miette!("Failed to create client: {:?}", e))?
             .with_auto_refresh(key_pair);
 
     // Set the tenant ID
-    client.set_tenant(Some(Uuid::parse_str(&tenant_id).unwrap()));
+    client
+        .set_tenant(Some(Uuid::parse_str(&tenant_id).unwrap()))
+        .await;
 
     // First request should succeed
     let invoices1 = client
@@ -40,7 +42,7 @@ async fn test_automatic_token_refresh_succeeds() -> Result<()> {
     // Clear the access token to simulate token expiry
     // We'll do this by directly setting an invalid token (this is a hack for testing)
     // In a real scenario, the token would expire naturally
-    client.clear_access_token_for_testing();
+    client.clear_access_token_for_testing().await;
     tracing::info!("Access token cleared (set to invalid)");
 
     // Second request should trigger automatic refresh and succeed
@@ -74,14 +76,15 @@ async fn test_without_auto_refresh_fails() -> Result<()> {
     let key_pair = KeyPair::new(client_id, Some(client_secret));
 
     // Create client WITHOUT auto-refresh
-    let mut client =
-        Client::from_client_credentials(key_pair, Some(xero_rs::Scope::all_accounting()))
-            .await
-            .map_err(|e| miette::miette!("Failed to create client: {:?}", e))?
-            .without_auto_refresh(); // Explicitly disable auto-refresh
+    let client = Client::from_client_credentials(key_pair, Some(xero_rs::Scope::all_accounting()))
+        .await
+        .map_err(|e| miette::miette!("Failed to create client: {:?}", e))?
+        .without_auto_refresh(); // Explicitly disable auto-refresh
 
     // Set the tenant ID
-    client.set_tenant(Some(Uuid::parse_str(&tenant_id).unwrap()));
+    client
+        .set_tenant(Some(Uuid::parse_str(&tenant_id).unwrap()))
+        .await;
 
     // First request should succeed
     let invoices1 = client
@@ -96,7 +99,7 @@ async fn test_without_auto_refresh_fails() -> Result<()> {
     );
 
     // Clear the access token to simulate token expiry
-    client.clear_access_token_for_testing();
+    client.clear_access_token_for_testing().await;
     tracing::info!("Access token cleared (set to invalid)");
 
     // Second request should fail because auto-refresh is disabled
@@ -142,13 +145,14 @@ async fn test_manual_refresh_still_works() -> Result<()> {
     let key_pair = KeyPair::new(client_id.clone(), Some(client_secret.clone()));
 
     // Create client without auto-refresh
-    let mut client =
-        Client::from_client_credentials(key_pair, Some(xero_rs::Scope::all_accounting()))
-            .await
-            .map_err(|e| miette::miette!("Failed to create client: {:?}", e))?;
+    let client = Client::from_client_credentials(key_pair, Some(xero_rs::Scope::all_accounting()))
+        .await
+        .map_err(|e| miette::miette!("Failed to create client: {:?}", e))?;
 
     // Set the tenant ID
-    client.set_tenant(Some(Uuid::parse_str(&tenant_id).unwrap()));
+    client
+        .set_tenant(Some(Uuid::parse_str(&tenant_id).unwrap()))
+        .await;
 
     // First request should succeed
     let invoices1 = client

@@ -101,7 +101,7 @@ impl Timesheet {
     ///
     /// This function will panic if the response contains timesheets but the first element cannot be accessed.
     pub async fn post(
-        client: &mut crate::client::Client,
+        client: &crate::client::Client,
         timesheet: &PostTimesheet,
     ) -> Result<Timesheet> {
         info!("Creating timesheet");
@@ -143,7 +143,7 @@ impl Timesheet {
     /// # Panics
     ///
     /// This function will panic if the response contains timesheets but the first element cannot be accessed.
-    pub async fn get(client: &mut crate::client::Client, timesheet_id: Uuid) -> Result<Timesheet> {
+    pub async fn get(client: &crate::client::Client, timesheet_id: Uuid) -> Result<Timesheet> {
         info!("Getting timesheet with ID: {}", timesheet_id);
 
         let url = format!("https://api.xero.com/payroll.xro/1.0/Timesheets/{timesheet_id}");
@@ -182,7 +182,7 @@ impl Timesheet {
     /// * `parameters` - Optional filter parameters, including `employee_id`, status, date range, page, where, order
     /// * `modified_after` - Optional ISO8601 timestamp to filter by modification date
     pub async fn list(
-        client: &mut crate::client::Client,
+        client: &crate::client::Client,
         parameters: Option<&ListParameters>,
         modified_after: Option<String>,
     ) -> Result<Vec<Timesheet>> {
@@ -192,7 +192,7 @@ impl Timesheet {
         debug!("GET URL: {}", url);
 
         // Build the request with parameters and headers
-        let mut request = client.build_request(reqwest::Method::GET, url);
+        let mut request = client.build_request(reqwest::Method::GET, url).await;
 
         // Add If-Modified-Since header if provided
         if let Some(date) = modified_after {
@@ -228,7 +228,7 @@ impl Timesheet {
     ///
     /// This function will panic if the response contains timesheets but the first element cannot be accessed.
     pub async fn update(
-        client: &mut crate::client::Client,
+        client: &crate::client::Client,
         timesheet: &Timesheet,
     ) -> Result<Timesheet> {
         info!("Updating timesheet with ID: {}", timesheet.timesheet_id);
