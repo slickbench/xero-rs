@@ -42,6 +42,7 @@ pub enum ErrorType {
     NotAvailableException,
     RateLimitExceededException,
     SystemUnavailableException,
+    Other(String),
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -73,8 +74,18 @@ pub struct ValidationExceptionElement {
 #[serde(rename_all = "PascalCase")]
 #[allow(dead_code)]
 pub struct Response {
-    pub error_number: u64,
-    pub message: String,
+    #[serde(default)]
+    pub error_number: Option<u64>,
+    #[serde(default)]
+    pub status: Option<u64>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub message: Option<String>,
+    #[serde(default)]
+    pub detail: Option<String>,
+    #[serde(default)]
+    pub instance: Option<Uuid>,
     #[serde(flatten)]
     pub error: ErrorType,
 }
@@ -84,7 +95,12 @@ impl fmt::Display for Response {
         write!(
             f,
             "Xero API Error ({}): {}",
-            self.error_number, self.message
+            self.error_number.unwrap_or(0),
+            self.message
+                .as_deref()
+                .or(self.title.as_deref())
+                .or(self.detail.as_deref())
+                .unwrap_or("Unknown")
         )?;
 
         // Add additional details based on error type
@@ -113,7 +129,10 @@ impl fmt::Display for Response {
                 }
             }
             ErrorType::QueryParseException => {
-                write!(f, "\nThe query string could not be parsed. Check for missing quotes or invalid syntax.")?;
+                write!(
+                    f,
+                    "\nThe query string could not be parsed. Check for missing quotes or invalid syntax."
+                )?;
             }
             _ => {}
         }
@@ -228,7 +247,9 @@ pub enum Error {
     #[error("rate limit exceeded: retry after {retry_after:?}")]
     #[diagnostic(
         code(xero_rs::rate_limit_exceeded),
-        help("The Xero API rate limit has been exceeded. Wait and retry, or implement request throttling.")
+        help(
+            "The Xero API rate limit has been exceeded. Wait and retry, or implement request throttling."
+        )
     )]
     RateLimitExceeded {
         retry_after: Option<Duration>,

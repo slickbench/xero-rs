@@ -8,10 +8,10 @@ use rust_decimal::Decimal;
 use std::env;
 use uuid::Uuid;
 use xero_rs::{
+    KeyPair,
     contact::ContactIdentifier,
     invoice::{Builder, Type},
     line_item::LineAmountType,
-    KeyPair,
 };
 
 /// Try to set up a client. Will return None if the required environment variables are not set.
@@ -32,7 +32,7 @@ async fn try_setup_client() -> Option<xero_rs::Client> {
     };
 
     // Create client with credentials and full scopes
-    let client = xero_rs::Client::from_client_credentials(
+    let mut client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id, Some(client_secret)),
         xero_rs::Scope::all_accounting(),
     )
@@ -40,7 +40,6 @@ async fn try_setup_client() -> Option<xero_rs::Client> {
     .ok()?;
 
     // Set the tenant ID and return the configured client
-    let mut client = client;
     client.set_tenant(Some(tenant_id));
 
     Some(client)
@@ -49,7 +48,7 @@ async fn try_setup_client() -> Option<xero_rs::Client> {
 #[tokio::test]
 async fn test_line_item_with_discount_amount() -> Result<()> {
     // Try to set up the client
-    let client = match try_setup_client().await {
+    let mut client = match try_setup_client().await {
         Some(client) => client,
         None => {
             info!("Skipping test: Required environment variables not set");
@@ -98,14 +97,16 @@ async fn test_line_item_with_discount_amount() -> Result<()> {
     };
 
     // Create an invoice with line items having discounts
+    let today = time::OffsetDateTime::now_utc().date();
+    let due_date = today + time::Duration::days(30);
+
     let invoice_builder = Builder {
         r#type: Type::AccountsReceivable,
         contact: ContactIdentifier::ID(contact_id),
         line_items: vec![line_item_with_discount_rate, line_item_with_discount_amount],
-        date: Some(time::macros::date!(2023 - 10 - 01)),
-        due_date: Some(time::macros::date!(2023 - 10 - 31)),
+        date: Some(today),
+        due_date: Some(due_date),
         line_amount_types: Some(LineAmountType::Exclusive),
-        invoice_number: Some("INV-DISCOUNT-TEST".to_string()),
         reference: Some("Testing discount_amount field".to_string()),
         ..Default::default()
     };

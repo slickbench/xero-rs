@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
+use time::Date;
 use tracing::{debug, error, info};
 use uuid::Uuid;
-use time::Date;
 
 use super::{TimesheetLine, TimesheetStatus};
 use crate::{
@@ -15,27 +15,35 @@ pub struct ListParameters {
     /// The employee ID to filter by
     #[serde(rename = "EmployeeId", skip_serializing_if = "Option::is_none")]
     pub employee_id: Option<Uuid>,
-    
+
     /// Filter by status (e.g., "DRAFT", "APPROVED", "PROCESSED")
     #[serde(rename = "Status", skip_serializing_if = "Option::is_none")]
     pub status: Option<TimesheetStatus>,
-    
+
     /// Filter by start date (timesheets that start on or after this date)
-    #[serde(rename = "StartDate", with = "xero_date_format_option", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "StartDate",
+        with = "xero_date_format_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub start_date: Option<Date>,
-    
+
     /// Filter by end date (timesheets that end on or before this date)
-    #[serde(rename = "EndDate", with = "xero_date_format_option", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "EndDate",
+        with = "xero_date_format_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub end_date: Option<Date>,
-    
+
     /// Page number for pagination
     #[serde(skip_serializing_if = "Option::is_none")]
     pub page: Option<i32>,
-    
+
     /// Filter by any field using Xero's WHERE syntax
     #[serde(rename = "where", skip_serializing_if = "Option::is_none")]
     pub where_filter: Option<String>,
-    
+
     /// Order results by a specific field
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order: Option<String>,
@@ -88,12 +96,12 @@ pub struct TimesheetResponse {
 
 impl Timesheet {
     /// Creates a new timesheet
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// This function will panic if the response contains timesheets but the first element cannot be accessed.
     pub async fn post(
-        client: &crate::client::Client,
+        client: &mut crate::client::Client,
         timesheet: &PostTimesheet,
     ) -> Result<Timesheet> {
         info!("Creating timesheet");
@@ -131,11 +139,11 @@ impl Timesheet {
     }
 
     /// Gets a timesheet by ID
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// This function will panic if the response contains timesheets but the first element cannot be accessed.
-    pub async fn get(client: &crate::client::Client, timesheet_id: Uuid) -> Result<Timesheet> {
+    pub async fn get(client: &mut crate::client::Client, timesheet_id: Uuid) -> Result<Timesheet> {
         info!("Getting timesheet with ID: {}", timesheet_id);
 
         let url = format!("https://api.xero.com/payroll.xro/1.0/Timesheets/{timesheet_id}");
@@ -174,9 +182,9 @@ impl Timesheet {
     /// * `parameters` - Optional filter parameters, including `employee_id`, status, date range, page, where, order
     /// * `modified_after` - Optional ISO8601 timestamp to filter by modification date
     pub async fn list(
-        client: &crate::client::Client, 
+        client: &mut crate::client::Client,
         parameters: Option<&ListParameters>,
-        modified_after: Option<String>
+        modified_after: Option<String>,
     ) -> Result<Vec<Timesheet>> {
         info!("Listing timesheets with filters: {:?}", parameters);
 
@@ -185,7 +193,7 @@ impl Timesheet {
 
         // Build the request with parameters and headers
         let mut request = client.build_request(reqwest::Method::GET, url);
-        
+
         // Add If-Modified-Since header if provided
         if let Some(date) = modified_after {
             request = request.header("If-Modified-Since", date);
@@ -199,12 +207,12 @@ impl Timesheet {
         // Send the request
         let response = request.send().await?;
         let status = response.status();
-        
+
         if !status.is_success() {
             error!("Error listing timesheets: HTTP status {}", status);
-            return Err(crate::error::Error::API(
-                serde_json::from_str(&response.text().await?)?,
-            ));
+            return Err(crate::error::Error::API(serde_json::from_str(
+                &response.text().await?,
+            )?));
         }
 
         // Parse the response
@@ -215,12 +223,12 @@ impl Timesheet {
     }
 
     /// Updates a timesheet
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// This function will panic if the response contains timesheets but the first element cannot be accessed.
     pub async fn update(
-        client: &crate::client::Client,
+        client: &mut crate::client::Client,
         timesheet: &Timesheet,
     ) -> Result<Timesheet> {
         info!("Updating timesheet with ID: {}", timesheet.timesheet_id);

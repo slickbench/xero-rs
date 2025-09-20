@@ -6,13 +6,13 @@ use time::Date;
 use uuid::Uuid;
 
 use crate::{
+    Client,
     contact::{Contact, ContactIdentifier},
     endpoints::XeroEndpoint,
-    entities::{endpoint_utils, EntityEndpoint, MutationResponse},
+    entities::{EntityEndpoint, MutationResponse, endpoint_utils},
     error::{Error, Result},
     line_item::{LineAmountType, LineItem},
     utils::date_format::{xero_date_format, xero_date_format_option},
-    Client,
 };
 
 pub const ENDPOINT: &str = "https://api.xero.com/api.xro/2.0/Quotes/";
@@ -319,30 +319,30 @@ impl EntityEndpoint<Quote, ListParameters> for Quote {
         ENDPOINT
     }
 
-    async fn get(client: &Client, id: Uuid) -> Result<Quote> {
+    async fn get(client: &mut Client, id: Uuid) -> Result<Quote> {
         endpoint_utils::get::<Quote, ListResponse>(client, ENDPOINT, id, "Quote").await
     }
 
-    async fn list(client: &Client, params: ListParameters) -> Result<Vec<Quote>> {
+    async fn list(client: &mut Client, params: ListParameters) -> Result<Vec<Quote>> {
         endpoint_utils::list::<Quote, ListResponse, _>(client, ENDPOINT, &params).await
     }
 }
 
 /// Retrieve a list of quotes with filtering.
 #[instrument(skip(client))]
-pub async fn list(client: &Client, params: ListParameters) -> Result<Vec<Quote>> {
+pub async fn list(client: &mut Client, params: ListParameters) -> Result<Vec<Quote>> {
     Quote::list(client, params).await
 }
 
 /// Retrieve a list of all quotes without filtering.
 #[instrument(skip(client))]
-pub async fn list_all(client: &Client) -> Result<Vec<Quote>> {
+pub async fn list_all(client: &mut Client) -> Result<Vec<Quote>> {
     Quote::list(client, ListParameters::default()).await
 }
 
 /// Retrieve a single quote by ID
 #[instrument(skip(client))]
-pub async fn get(client: &Client, quote_id: Uuid) -> Result<Quote> {
+pub async fn get(client: &mut Client, quote_id: Uuid) -> Result<Quote> {
     let endpoint = XeroEndpoint::Custom(vec!["Quotes".to_string(), quote_id.to_string()]);
 
     let endpoint_clone = endpoint.clone();
@@ -359,7 +359,7 @@ pub async fn get(client: &Client, quote_id: Uuid) -> Result<Quote> {
 
 /// Create one or more quotes.
 #[instrument(skip(client, quote))]
-pub async fn create(client: &Client, quote: &QuoteBuilder) -> Result<Quote> {
+pub async fn create(client: &mut Client, quote: &QuoteBuilder) -> Result<Quote> {
     let request = QuoteWrapper {
         quotes: vec![quote],
     };
@@ -381,7 +381,7 @@ pub async fn create(client: &Client, quote: &QuoteBuilder) -> Result<Quote> {
 
 /// Update or create one or more quotes.
 #[instrument(skip(client, quote))]
-pub async fn update_or_create(client: &Client, quote: &QuoteBuilder) -> Result<Quote> {
+pub async fn update_or_create(client: &mut Client, quote: &QuoteBuilder) -> Result<Quote> {
     let request = QuoteWrapper {
         quotes: vec![quote],
     };
@@ -403,7 +403,7 @@ pub async fn update_or_create(client: &Client, quote: &QuoteBuilder) -> Result<Q
 
 /// Update a specific quote.
 #[instrument(skip(client, quote))]
-pub async fn update(client: &Client, quote_id: Uuid, quote: &QuoteBuilder) -> Result<Quote> {
+pub async fn update(client: &mut Client, quote_id: Uuid, quote: &QuoteBuilder) -> Result<Quote> {
     let mut updatable_quote = quote.clone();
     updatable_quote.quote_id = Some(quote_id);
 
@@ -429,7 +429,7 @@ pub async fn update(client: &Client, quote_id: Uuid, quote: &QuoteBuilder) -> Re
 
 /// Retrieve history records for a quote
 #[instrument(skip(client))]
-pub async fn get_history(client: &Client, quote_id: Uuid) -> Result<Vec<HistoryRecord>> {
+pub async fn get_history(client: &mut Client, quote_id: Uuid) -> Result<Vec<HistoryRecord>> {
     let endpoint = XeroEndpoint::Custom(vec![
         "Quotes".to_string(),
         quote_id.to_string(),
@@ -445,7 +445,7 @@ pub async fn get_history(client: &Client, quote_id: Uuid) -> Result<Vec<HistoryR
 /// Create a history record for a specific quote.
 #[instrument(skip(client))]
 pub async fn create_history(
-    client: &Client,
+    client: &mut Client,
     quote_id: Uuid,
     details: &str,
 ) -> Result<Vec<HistoryRecord>> {
@@ -473,7 +473,7 @@ pub async fn create_history(
 
 /// Retrieve a quote as a PDF file.
 #[instrument(skip(client))]
-pub async fn get_pdf(client: &Client, quote_id: Uuid) -> Result<Vec<u8>> {
+pub async fn get_pdf(client: &mut Client, quote_id: Uuid) -> Result<Vec<u8>> {
     let endpoint = XeroEndpoint::Custom(vec![
         "Quotes".to_string(),
         quote_id.to_string(),
@@ -504,7 +504,7 @@ pub async fn get_pdf(client: &Client, quote_id: Uuid) -> Result<Vec<u8>> {
 
 /// List all attachments for a quote.
 #[instrument(skip(client))]
-pub async fn list_attachments(client: &Client, quote_id: Uuid) -> Result<Vec<Attachment>> {
+pub async fn list_attachments(client: &mut Client, quote_id: Uuid) -> Result<Vec<Attachment>> {
     let endpoint = XeroEndpoint::Custom(vec![
         "Quotes".to_string(),
         quote_id.to_string(),
@@ -520,7 +520,7 @@ pub async fn list_attachments(client: &Client, quote_id: Uuid) -> Result<Vec<Att
 /// Get a specific attachment by ID.
 #[instrument(skip(client))]
 pub async fn get_attachment(
-    client: &Client,
+    client: &mut Client,
     quote_id: Uuid,
     attachment_id: Uuid,
 ) -> Result<Vec<u8>> {
@@ -556,7 +556,7 @@ pub async fn get_attachment(
 /// Get an attachment by filename.
 #[instrument(skip(client))]
 pub async fn get_attachment_by_filename(
-    client: &Client,
+    client: &mut Client,
     quote_id: Uuid,
     filename: &str,
 ) -> Result<Vec<u8>> {
@@ -593,7 +593,7 @@ pub async fn get_attachment_by_filename(
 /// Upload an attachment to a quote.
 #[instrument(skip(client, attachment_content))]
 pub async fn upload_attachment(
-    client: &Client,
+    client: &mut Client,
     quote_id: Uuid,
     filename: &str,
     attachment_content: &[u8],
@@ -671,7 +671,7 @@ pub async fn upload_attachment(
 /// Update an existing attachment.
 #[instrument(skip(client, attachment_content))]
 pub async fn update_attachment(
-    client: &Client,
+    client: &mut Client,
     quote_id: Uuid,
     filename: &str,
     attachment_content: &[u8],

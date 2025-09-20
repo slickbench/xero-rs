@@ -29,7 +29,7 @@ async fn authorize_client() -> Result<()> {
     // Set the tenant ID
     client.set_tenant(Some(tenant_id));
 
-    let connections = xero_rs::connection::list(&client).await?;
+    let connections = xero_rs::connection::list(&mut client).await?;
     info!("received client connections: {:?}", connections);
     Ok(())
 }

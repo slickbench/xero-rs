@@ -1,7 +1,7 @@
 use anyhow::Result;
 use std::env;
 use tracing::{error, info};
-use xero_rs::{oauth::KeyPair, Client, scope::Scope};
+use xero_rs::{Client, oauth::KeyPair, scope::Scope};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -16,7 +16,7 @@ async fn main() -> Result<()> {
     let scopes = Scope::all_accounting();
 
     info!("Creating client with credentials...");
-    let client = match Client::from_client_credentials(
+    let mut client = match Client::from_client_credentials(
         KeyPair::new(client_id, Some(client_secret)),
         Some(scopes),
     )
@@ -30,7 +30,7 @@ async fn main() -> Result<()> {
     };
 
     info!("Fetching available connections...");
-    match xero_rs::entities::connection::list(&client).await {
+    match xero_rs::entities::connection::list(&mut client).await {
         Ok(connections) => {
             if connections.is_empty() {
                 info!("No connections found");

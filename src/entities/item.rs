@@ -4,11 +4,11 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::{
+    Client,
     endpoints::XeroEndpoint,
-    entities::{endpoint_utils, EntityEndpoint, MutationResponse},
+    entities::{EntityEndpoint, MutationResponse, endpoint_utils},
     error::{Error, Result},
     utils::date_format::xero_datetime_format,
-    Client,
 };
 
 pub const ENDPOINT: &str = "https://api.xero.com/api.xro/2.0/Items/";
@@ -352,11 +352,11 @@ impl EntityEndpoint<Item, ListParameters> for Item {
         ENDPOINT
     }
 
-    async fn get(client: &Client, id: Uuid) -> Result<Item> {
+    async fn get(client: &mut Client, id: Uuid) -> Result<Item> {
         endpoint_utils::get::<Item, ListResponse>(client, ENDPOINT, id, "Item").await
     }
 
-    async fn list(client: &Client, params: ListParameters) -> Result<Vec<Item>> {
+    async fn list(client: &mut Client, params: ListParameters) -> Result<Vec<Item>> {
         endpoint_utils::list::<Item, ListResponse, ListParameters>(client, ENDPOINT, &params).await
     }
 }
@@ -364,7 +364,7 @@ impl EntityEndpoint<Item, ListParameters> for Item {
 // Add extension methods to Item
 impl Item {
     /// Get a single item by code
-    pub async fn get_by_code(client: &Client, code: &str) -> Result<Item> {
+    pub async fn get_by_code(client: &mut Client, code: &str) -> Result<Item> {
         use std::str::FromStr;
         use url::Url;
 
@@ -385,27 +385,27 @@ impl Item {
 }
 
 /// List items with optional parameters
-pub async fn list(client: &Client, params: ListParameters) -> Result<Vec<Item>> {
+pub async fn list(client: &mut Client, params: ListParameters) -> Result<Vec<Item>> {
     Item::list(client, params).await
 }
 
 /// List all items without any filtering
-pub async fn list_all(client: &Client) -> Result<Vec<Item>> {
+pub async fn list_all(client: &mut Client) -> Result<Vec<Item>> {
     Item::list(client, ListParameters::default()).await
 }
 
 /// Get a single item by ID
-pub async fn get(client: &Client, item_id: Uuid) -> Result<Item> {
+pub async fn get(client: &mut Client, item_id: Uuid) -> Result<Item> {
     Item::get(client, item_id).await
 }
 
 /// Get a single item by code
-pub async fn get_by_code(client: &Client, code: &str) -> Result<Item> {
+pub async fn get_by_code(client: &mut Client, code: &str) -> Result<Item> {
     Item::get_by_code(client, code).await
 }
 
 /// Create one or more items
-pub async fn create(client: &Client, items: &[Builder]) -> Result<Vec<Item>> {
+pub async fn create(client: &mut Client, items: &[Builder]) -> Result<Vec<Item>> {
     let wrapper = ItemWrapper {
         items: items.iter().collect(),
     };
@@ -423,7 +423,7 @@ pub async fn create(client: &Client, items: &[Builder]) -> Result<Vec<Item>> {
 }
 
 /// Create a single item
-pub async fn create_single(client: &Client, item: &Builder) -> Result<Item> {
+pub async fn create_single(client: &mut Client, item: &Builder) -> Result<Item> {
     let items = create(client, &[item.clone()]).await?;
     items.into_iter().next().ok_or(Error::NotFound {
         entity: "Item".to_string(),
@@ -434,7 +434,7 @@ pub async fn create_single(client: &Client, item: &Builder) -> Result<Item> {
 }
 
 /// Update or create one or more items
-pub async fn update_or_create(client: &Client, items: &[Builder]) -> Result<Vec<Item>> {
+pub async fn update_or_create(client: &mut Client, items: &[Builder]) -> Result<Vec<Item>> {
     let wrapper = ItemWrapper {
         items: items.iter().collect(),
     };
@@ -452,7 +452,7 @@ pub async fn update_or_create(client: &Client, items: &[Builder]) -> Result<Vec<
 }
 
 /// Update a specific item
-pub async fn update(client: &Client, item_id: Uuid, item: &Builder) -> Result<Item> {
+pub async fn update(client: &mut Client, item_id: Uuid, item: &Builder) -> Result<Item> {
     let mut item_with_id = item.clone();
     item_with_id.item_id = Some(item_id);
 
@@ -476,13 +476,13 @@ pub async fn update(client: &Client, item_id: Uuid, item: &Builder) -> Result<It
 }
 
 /// Delete a specific item
-pub async fn delete(client: &Client, item_id: Uuid) -> Result<()> {
+pub async fn delete(client: &mut Client, item_id: Uuid) -> Result<()> {
     let endpoint = XeroEndpoint::Custom(vec![format!("Items/{}", item_id)]);
     client.delete_endpoint(endpoint).await
 }
 
 /// Get the history for an item
-pub async fn get_history(client: &Client, item_id: Uuid) -> Result<Vec<HistoryRecord>> {
+pub async fn get_history(client: &mut Client, item_id: Uuid) -> Result<Vec<HistoryRecord>> {
     let endpoint = XeroEndpoint::Custom(vec![format!("Items/{}/History", item_id)]);
     let response: HistoryRecords = client.get_endpoint(endpoint, &()).await?;
     Ok(response.history_records)
@@ -490,7 +490,7 @@ pub async fn get_history(client: &Client, item_id: Uuid) -> Result<Vec<HistoryRe
 
 /// Create a history record for an item
 pub async fn create_history(
-    client: &Client,
+    client: &mut Client,
     item_id: Uuid,
     details: &str,
 ) -> Result<Vec<HistoryRecord>> {

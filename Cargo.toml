@@ -1,7 +1,7 @@
 [package]
 name = "xero-rs"
-version = "0.1.0-alpha.15"
-edition = "2018"
+version = "0.2.0-alpha.1"
+edition = "2024"
 description = "A Xero API client library for Rust"
 license-file = "LICENSE"
 repository = "https://github.com/slickbench/xero-rs"
@@ -41,7 +41,7 @@ tokio-retry = "0.3.0"
 [dev-dependencies]
 rust_decimal_macros = "1.15"
 lazy_static = "1"
-warp = "0.3"
+warp = { version = "0.4", features = ["server"] }
 regex = "1"
 tokio = { version = "1", default-features = false, features = [
     "time",
@@ -53,3 +53,4 @@ tokio = { version = "1", default-features = false, features = [
 anyhow = "1"
 tracing-subscriber = "0.3"
 miette = { version = "7", features = ["fancy"] }
+serial_test = "3"

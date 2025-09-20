@@ -1,12 +1,8 @@
-use time::OffsetDateTime;
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::{
-    error::Result, 
-    Client,
-    utils::date_format::xero_datetime_format,
-};
+use crate::{Client, error::Result, utils::date_format::xero_datetime_format};
 
 pub const ENDPOINT: &str = "https://api.xero.com/connections";
 
@@ -26,7 +22,7 @@ pub struct Connection {
 
 /// Retrieve a list of authorized connections (tennants).
 #[instrument(skip(client))]
-pub async fn list(client: &Client) -> Result<Vec<Connection>> {
+pub async fn list(client: &mut Client) -> Result<Vec<Connection>> {
     let empty_vec: Vec<String> = Vec::new();
     client.get(ENDPOINT, &empty_vec).await
 }

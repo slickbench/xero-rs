@@ -1,5 +1,5 @@
 use miette::{IntoDiagnostic, Result};
-use tracing::{debug, error, info};
+use tracing::{Level, debug, error, info};
 use uuid::Uuid;
 
 use std::sync::Once;
@@ -21,24 +21,22 @@ pub async fn create_test_client(scopes: Option<xero_rs::Scope>) -> Result<Client
     }
 
     // Create client
-    let client = match Client::from_client_credentials(
-        KeyPair::new(client_id, Some(client_secret)),
-        scopes,
-    )
-    .await
-    .into_diagnostic()
-    {
-        Ok(mut client) => {
-            // Set the tenant ID
-            client.set_tenant(Some(Uuid::parse_str(&tenant_id).into_diagnostic()?));
-            info!("Client created successfully");
-            client
-        }
-        Err(e) => {
-            error!("Failed to create client: {:?}", e);
-            return Err(miette::miette!("Failed to create client: {:?}", e));
-        }
-    };
+    let client =
+        match Client::from_client_credentials(KeyPair::new(client_id, Some(client_secret)), scopes)
+            .await
+            .into_diagnostic()
+        {
+            Ok(mut client) => {
+                // Set the tenant ID
+                client.set_tenant(Some(Uuid::parse_str(&tenant_id).into_diagnostic()?));
+                info!("Client created successfully");
+                client
+            }
+            Err(e) => {
+                error!("Failed to create client: {:?}", e);
+                return Err(miette::miette!("Failed to create client: {:?}", e));
+            }
+        };
 
     Ok(client)
 }
@@ -65,7 +63,12 @@ static LOGGING_CONFIGURED: Once = Once::new();
 
 /// Setup before test runs
 pub fn do_setup() {
-    LOGGING_CONFIGURED.call_once(|| tracing_subscriber::fmt().with_test_writer().init());
+    LOGGING_CONFIGURED.call_once(|| {
+        tracing_subscriber::fmt()
+            .with_max_level(Level::TRACE)
+            .with_test_writer()
+            .init()
+    });
     info!("Setting up test environment");
 }
 

@@ -11,7 +11,7 @@ use time::macros::date;
 use uuid::Uuid;
 use xero_rs::contact::ContactIdentifier;
 use xero_rs::invoice::{Builder, ListParameters, Type};
-use xero_rs::{line_item::LineAmountType, KeyPair};
+use xero_rs::{KeyPair, line_item::LineAmountType};
 
 /// Try to set up a client. Will return None if the required environment variables are not set.
 async fn try_setup_client() -> Option<xero_rs::Client> {
@@ -31,7 +31,7 @@ async fn try_setup_client() -> Option<xero_rs::Client> {
     };
 
     // Create client with credentials and full scopes
-    let client = xero_rs::Client::from_client_credentials(
+    let mut client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id, Some(client_secret)),
         xero_rs::Scope::all_accounting(),
     )
@@ -39,7 +39,6 @@ async fn try_setup_client() -> Option<xero_rs::Client> {
     .ok()?;
 
     // Set the tenant ID and return the configured client
-    let mut client = client;
     client.set_tenant(Some(tenant_id));
 
     Some(client)
@@ -48,7 +47,7 @@ async fn try_setup_client() -> Option<xero_rs::Client> {
 #[tokio::test]
 async fn list_invoices() -> Result<()> {
     // Try to set up the client
-    let client = match try_setup_client().await {
+    let mut client = match try_setup_client().await {
         Some(client) => client,
         None => {
             info!("Skipping test: Required environment variables not set");
@@ -71,7 +70,7 @@ async fn list_invoices() -> Result<()> {
 #[tokio::test]
 async fn get_invoice() -> Result<()> {
     // Try to set up the client
-    let client = match try_setup_client().await {
+    let mut client = match try_setup_client().await {
         Some(client) => client,
         None => {
             info!("Skipping test: Required environment variables not set");
@@ -100,7 +99,7 @@ async fn get_invoice() -> Result<()> {
 #[tokio::test]
 async fn create_update_invoice() -> Result<()> {
     // Try to set up the client
-    let client = match try_setup_client().await {
+    let mut client = match try_setup_client().await {
         Some(client) => client,
         None => {
             info!("Skipping test: Required environment variables not set");
@@ -204,7 +203,7 @@ async fn create_update_invoice() -> Result<()> {
 #[tokio::test]
 async fn invoice_history() -> Result<()> {
     // Try to set up the client
-    let client = match try_setup_client().await {
+    let mut client = match try_setup_client().await {
         Some(client) => client,
         None => {
             info!("Skipping test: Required environment variables not set");
@@ -244,7 +243,7 @@ async fn invoice_history() -> Result<()> {
 #[tokio::test]
 async fn invoice_pdf() -> Result<()> {
     // Try to set up the client
-    let client = match try_setup_client().await {
+    let mut client = match try_setup_client().await {
         Some(client) => client,
         None => {
             info!("Skipping test: Required environment variables not set");
@@ -284,7 +283,7 @@ async fn invoice_pdf() -> Result<()> {
 #[tokio::test]
 async fn invoice_attachments() -> Result<()> {
     // Try to set up the client
-    let client = match try_setup_client().await {
+    let mut client = match try_setup_client().await {
         Some(client) => client,
         None => {
             info!("Skipping test: Required environment variables not set");
@@ -374,7 +373,7 @@ async fn invoice_attachments() -> Result<()> {
 #[tokio::test]
 async fn invoice_online_url() -> Result<()> {
     // Try to set up the client
-    let client = match try_setup_client().await {
+    let mut client = match try_setup_client().await {
         Some(client) => client,
         None => {
             info!("Skipping test: Required environment variables not set");
@@ -404,7 +403,7 @@ async fn invoice_online_url() -> Result<()> {
 #[tokio::test]
 async fn invoice_email() -> Result<()> {
     // Try to set up the client
-    let client = match try_setup_client().await {
+    let mut client = match try_setup_client().await {
         Some(client) => client,
         None => {
             info!("Skipping test: Required environment variables not set");

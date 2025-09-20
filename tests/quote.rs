@@ -10,7 +10,7 @@ use time::macros::date;
 use uuid::Uuid;
 use xero_rs::contact::ContactIdentifier;
 use xero_rs::quote::{ListParameters, QuoteBuilder, Status};
-use xero_rs::{line_item::LineAmountType, KeyPair};
+use xero_rs::{KeyPair, line_item::LineAmountType};
 
 /// Try to set up a client. Will return None if the required environment variables are not set.
 async fn try_setup_client() -> Option<xero_rs::Client> {
@@ -30,7 +30,7 @@ async fn try_setup_client() -> Option<xero_rs::Client> {
     };
 
     // Create client with credentials and full scopes
-    let client = xero_rs::Client::from_client_credentials(
+    let mut client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id, Some(client_secret)),
         xero_rs::Scope::all_accounting(),
     )
@@ -38,7 +38,6 @@ async fn try_setup_client() -> Option<xero_rs::Client> {
     .ok()?;
 
     // Set the tenant ID and return the configured client
-    let mut client = client;
     client.set_tenant(Some(tenant_id));
 
     Some(client)
@@ -47,7 +46,7 @@ async fn try_setup_client() -> Option<xero_rs::Client> {
 #[tokio::test]
 async fn list_quotes() -> Result<()> {
     // Try to set up the client
-    let client = match try_setup_client().await {
+    let mut client = match try_setup_client().await {
         Some(client) => client,
         None => {
             info!("Skipping test: Required environment variables not set");
@@ -70,7 +69,7 @@ async fn list_quotes() -> Result<()> {
 #[tokio::test]
 async fn get_quote() -> Result<()> {
     // Try to set up the client
-    let client = match try_setup_client().await {
+    let mut client = match try_setup_client().await {
         Some(client) => client,
         None => {
             info!("Skipping test: Required environment variables not set");
@@ -96,7 +95,7 @@ async fn get_quote() -> Result<()> {
 #[tokio::test]
 async fn create_update_quote() -> Result<()> {
     // Try to set up the client
-    let client = match try_setup_client().await {
+    let mut client = match try_setup_client().await {
         Some(client) => client,
         None => {
             info!("Skipping test: Required environment variables not set");
@@ -190,7 +189,7 @@ async fn create_update_quote() -> Result<()> {
 #[tokio::test]
 async fn quote_history() -> Result<()> {
     // Try to set up the client
-    let client = match try_setup_client().await {
+    let mut client = match try_setup_client().await {
         Some(client) => client,
         None => {
             info!("Skipping test: Required environment variables not set");
@@ -230,7 +229,7 @@ async fn quote_history() -> Result<()> {
 #[tokio::test]
 async fn quote_pdf() -> Result<()> {
     // Try to set up the client
-    let client = match try_setup_client().await {
+    let mut client = match try_setup_client().await {
         Some(client) => client,
         None => {
             info!("Skipping test: Required environment variables not set");
@@ -270,7 +269,7 @@ async fn quote_pdf() -> Result<()> {
 #[tokio::test]
 async fn quote_attachments() -> Result<()> {
     // Try to set up the client
-    let client = match try_setup_client().await {
+    let mut client = match try_setup_client().await {
         Some(client) => client,
         None => {
             info!("Skipping test: Required environment variables not set");

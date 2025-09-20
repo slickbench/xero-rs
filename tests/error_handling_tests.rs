@@ -1,4 +1,5 @@
 use serde_json::json;
+use uuid::Uuid;
 use xero_rs::error::{ErrorType, Response as ErrorResponse};
 
 #[test]
@@ -61,8 +62,12 @@ fn test_validation_exception_handling() {
 fn test_error_display_formatting() {
     // Test the Display implementation for better error messages
     let error_response = ErrorResponse {
-        error_number: 16,
-        message: "Unterminated string literal".to_string(),
+        error_number: Some(16),
+        status: Some(400),
+        title: Some("Unterminated string literal".to_string()),
+        detail: Some("Unterminated string literal".to_string()),
+        instance: None,
+        message: Some("Unterminated string literal".to_string()),
         error: ErrorType::QueryParseException,
     };
 

@@ -2,7 +2,11 @@
 extern crate tracing;
 
 use anyhow::Result;
-use xero_rs::{oauth::KeyPair, Client, scope::{Scope, ScopeType, Permission}};
+use xero_rs::{
+    Client,
+    oauth::KeyPair,
+    scope::{Permission, Scope, ScopeType},
+};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -17,21 +21,19 @@ async fn main() -> Result<()> {
     let scope = Scope::from(vec![
         ScopeType::AccountingTransactions(Permission::ReadOnly),
         ScopeType::PayrollTimesheets(Permission::ReadWrite),
-        ScopeType::PayrollSettings(Permission::ReadWrite), 
+        ScopeType::PayrollSettings(Permission::ReadWrite),
         ScopeType::PayrollEmployees(Permission::ReadWrite),
         ScopeType::PayrollPayslip(Permission::ReadWrite),
-        ScopeType::PayrollPayruns(Permission::ReadWrite)
+        ScopeType::PayrollPayruns(Permission::ReadWrite),
     ]);
 
     // Create a client with client credentials and required scopes
-    let mut client = Client::from_client_credentials(
-        KeyPair::new(client_id, Some(client_secret)),
-        Some(scope),
-    )
-    .await?;
+    let mut client =
+        Client::from_client_credentials(KeyPair::new(client_id, Some(client_secret)), Some(scope))
+            .await?;
 
     // Get tenant ID from connections
-    let connections = xero_rs::entities::connection::list(&client).await?;
+    let connections = xero_rs::entities::connection::list(&mut client).await?;
     info!("found client connections: {:#?}", connections);
     let tenant_id = connections.first().expect("No connections found").tenant_id;
     client.set_tenant(Some(tenant_id));

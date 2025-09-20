@@ -110,13 +110,13 @@ pub trait EntityEndpoint<T, ListParams = ()> {
 
     /// Get entity by ID
     fn get(
-        client: &crate::Client,
+        client: &mut crate::Client,
         id: uuid::Uuid,
     ) -> impl std::future::Future<Output = crate::error::Result<T>> + Send;
 
     /// List entities with optional parameters
     fn list(
-        client: &crate::Client,
+        client: &mut crate::Client,
         params: ListParams,
     ) -> impl std::future::Future<Output = crate::error::Result<Vec<T>>> + Send;
 }
@@ -129,8 +129,8 @@ pub mod endpoint_utils {
     use uuid::Uuid;
 
     use crate::{
-        error::{Error, Result},
         Client,
+        error::{Error, Result},
     };
 
     // Re-export list function for easier access
@@ -138,7 +138,7 @@ pub mod endpoint_utils {
 
     /// Generic function to get a single entity by ID
     pub async fn get<T, R>(
-        client: &Client,
+        client: &mut Client,
         endpoint: &str,
         id: Uuid,
         entity_name: &str,
@@ -168,7 +168,7 @@ pub mod endpoint_utils {
         use serde::de::DeserializeOwned;
 
         /// Lists all entities without filtering
-        pub async fn list_all<T, R>(client: &Client, endpoint: &str) -> Result<Vec<T>>
+        pub async fn list_all<T, R>(client: &mut Client, endpoint: &str) -> Result<Vec<T>>
         where
             T: DeserializeOwned,
             Vec<T>: From<R>,
@@ -181,7 +181,11 @@ pub mod endpoint_utils {
 
         /// Lists entities with filtering
         #[allow(clippy::module_name_repetitions)]
-        pub async fn list<T, R, P>(client: &Client, endpoint: &str, params: &P) -> Result<Vec<T>>
+        pub async fn list<T, R, P>(
+            client: &mut Client,
+            endpoint: &str,
+            params: &P,
+        ) -> Result<Vec<T>>
         where
             T: DeserializeOwned,
             Vec<T>: From<R>,
@@ -199,21 +203,21 @@ pub trait EntityBuilder<T> {
     /// Build and create the entity via the API
     fn create(
         self,
-        client: &crate::Client,
+        client: &mut crate::Client,
     ) -> impl std::future::Future<Output = crate::error::Result<T>> + Send;
 }
 
 /// Helper functions for entity creation
 pub mod builder_utils {
-    use serde::{de::DeserializeOwned, Serialize};
+    use serde::{Serialize, de::DeserializeOwned};
 
     use crate::{
-        error::{Error, Result},
         Client,
+        error::{Error, Result},
     };
 
     /// Generic function to create a new entity
-    pub async fn create<T, R, B>(client: &Client, endpoint: &str, builder: &B) -> Result<T>
+    pub async fn create<T, R, B>(client: &mut Client, endpoint: &str, builder: &B) -> Result<T>
     where
         T: DeserializeOwned,
         Option<T>: From<R>,

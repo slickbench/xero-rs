@@ -11,6 +11,7 @@ pub enum ScopeCategory {
     Files,
     Payroll,
     Projects,
+    Authentication,
 }
 
 /// Permission level for a scope
@@ -35,22 +36,25 @@ pub enum ScopeType {
     AccountingSettings(Permission),
     AccountingContacts(Permission),
     AccountingAttachments(Permission),
-    
+
     // Assets scopes
     Assets(Permission),
-    
+
     // Files scopes
     Files(Permission),
-    
+
     // Payroll scopes
     PayrollEmployees(Permission),
     PayrollPayruns(Permission),
     PayrollPayslip(Permission),
     PayrollSettings(Permission),
     PayrollTimesheets(Permission),
-    
+
     // Projects scopes
     Projects(Permission),
+
+    // Offline access scope
+    OfflineAccess,
 }
 
 impl ScopeType {
@@ -70,15 +74,15 @@ impl ScopeType {
             Self::AccountingContacts(Permission::ReadOnly) => "accounting.contacts.read",
             Self::AccountingAttachments(Permission::ReadWrite) => "accounting.attachments",
             Self::AccountingAttachments(Permission::ReadOnly) => "accounting.attachments.read",
-            
+
             // Assets scopes
             Self::Assets(Permission::ReadWrite) => "assets",
             Self::Assets(Permission::ReadOnly) => "assets.read",
-            
+
             // Files scopes
             Self::Files(Permission::ReadWrite) => "files",
             Self::Files(Permission::ReadOnly) => "files.read",
-            
+
             // Payroll scopes
             Self::PayrollEmployees(Permission::ReadWrite) => "payroll.employees",
             Self::PayrollEmployees(Permission::ReadOnly) => "payroll.employees.read",
@@ -90,35 +94,42 @@ impl ScopeType {
             Self::PayrollSettings(Permission::ReadOnly) => "payroll.settings.read",
             Self::PayrollTimesheets(Permission::ReadWrite) => "payroll.timesheets",
             Self::PayrollTimesheets(Permission::ReadOnly) => "payroll.timesheets.read",
-            
+
             // Projects scopes
             Self::Projects(Permission::ReadWrite) => "projects",
             Self::Projects(Permission::ReadOnly) => "projects.read",
-        }.to_string()
+
+            // Offline access scope
+            Self::OfflineAccess => "offline_access",
+        }
+        .to_string()
     }
-    
+
     /// Get the category of this scope
-    #[must_use] pub fn category(&self) -> ScopeCategory {
+    #[must_use]
+    pub fn category(&self) -> ScopeCategory {
         match self {
-            Self::AccountingTransactions(_) | 
-            Self::AccountingReports | 
-            Self::AccountingReportsTenninetynine |
-            Self::AccountingBudgets |
-            Self::AccountingJournals |
-            Self::AccountingSettings(_) |
-            Self::AccountingContacts(_) |
-            Self::AccountingAttachments(_) => ScopeCategory::Accounting,
-            
+            Self::AccountingTransactions(_)
+            | Self::AccountingReports
+            | Self::AccountingReportsTenninetynine
+            | Self::AccountingBudgets
+            | Self::AccountingJournals
+            | Self::AccountingSettings(_)
+            | Self::AccountingContacts(_)
+            | Self::AccountingAttachments(_) => ScopeCategory::Accounting,
+
             Self::Assets(_) => ScopeCategory::Assets,
             Self::Files(_) => ScopeCategory::Files,
-            
-            Self::PayrollEmployees(_) |
-            Self::PayrollPayruns(_) |
-            Self::PayrollPayslip(_) |
-            Self::PayrollSettings(_) |
-            Self::PayrollTimesheets(_) => ScopeCategory::Payroll,
-            
+
+            Self::PayrollEmployees(_)
+            | Self::PayrollPayruns(_)
+            | Self::PayrollPayslip(_)
+            | Self::PayrollSettings(_)
+            | Self::PayrollTimesheets(_) => ScopeCategory::Payroll,
+
             Self::Projects(_) => ScopeCategory::Projects,
+
+            Self::OfflineAccess => ScopeCategory::Authentication,
         }
     }
 }
@@ -137,12 +148,14 @@ impl std::error::Error for ParseScopeError {}
 
 impl FromStr for ScopeType {
     type Err = ParseScopeError;
-    
+
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
             // Accounting scopes
             "accounting.transactions" => Ok(Self::AccountingTransactions(Permission::ReadWrite)),
-            "accounting.transactions.read" => Ok(Self::AccountingTransactions(Permission::ReadOnly)),
+            "accounting.transactions.read" => {
+                Ok(Self::AccountingTransactions(Permission::ReadOnly))
+            }
             "accounting.reports.read" => Ok(Self::AccountingReports),
             "accounting.reports.tenninetynine.read" => Ok(Self::AccountingReportsTenninetynine),
             "accounting.budgets.read" => Ok(Self::AccountingBudgets),
@@ -153,15 +166,15 @@ impl FromStr for ScopeType {
             "accounting.contacts.read" => Ok(Self::AccountingContacts(Permission::ReadOnly)),
             "accounting.attachments" => Ok(Self::AccountingAttachments(Permission::ReadWrite)),
             "accounting.attachments.read" => Ok(Self::AccountingAttachments(Permission::ReadOnly)),
-            
+
             // Assets scopes
             "assets" => Ok(Self::Assets(Permission::ReadWrite)),
             "assets.read" => Ok(Self::Assets(Permission::ReadOnly)),
-            
+
             // Files scopes
             "files" => Ok(Self::Files(Permission::ReadWrite)),
             "files.read" => Ok(Self::Files(Permission::ReadOnly)),
-            
+
             // Payroll scopes
             "payroll.employees" => Ok(Self::PayrollEmployees(Permission::ReadWrite)),
             "payroll.employees.read" => Ok(Self::PayrollEmployees(Permission::ReadOnly)),
@@ -173,11 +186,13 @@ impl FromStr for ScopeType {
             "payroll.settings.read" => Ok(Self::PayrollSettings(Permission::ReadOnly)),
             "payroll.timesheets" => Ok(Self::PayrollTimesheets(Permission::ReadWrite)),
             "payroll.timesheets.read" => Ok(Self::PayrollTimesheets(Permission::ReadOnly)),
-            
+
             // Projects scopes
             "projects" => Ok(Self::Projects(Permission::ReadWrite)),
             "projects.read" => Ok(Self::Projects(Permission::ReadOnly)),
-            
+
+            "offline_access" => Ok(Self::OfflineAccess),
+
             _ => Err(ParseScopeError(s.to_string())),
         }
     }
@@ -195,7 +210,7 @@ impl Scope {
     pub fn new() -> Self {
         Self { scopes: Vec::new() }
     }
-    
+
     /// Creates a scope collection from a vector of scope types
     #[must_use]
     pub fn from_types(scope_types: Vec<ScopeType>) -> Self {
@@ -205,26 +220,30 @@ impl Scope {
             .collect();
         Self { scopes }
     }
-    
+
     /// Creates a scope from a single scope type
     #[must_use]
     pub fn from_type(scope_type: ScopeType) -> Self {
-        Self { scopes: vec![OAuth2Scope::new(scope_type.to_string())] }
+        Self {
+            scopes: vec![OAuth2Scope::new(scope_type.to_string())],
+        }
     }
 
     /// Creates a scope from a raw string
     #[must_use]
     pub fn from_string(scope: impl Into<String>) -> Self {
-        Self { scopes: vec![OAuth2Scope::new(scope.into())] }
+        Self {
+            scopes: vec![OAuth2Scope::new(scope.into())],
+        }
     }
-    
+
     /// Add a scope to this collection
     #[must_use]
     pub fn with(mut self, scope_type: ScopeType) -> Self {
         self.scopes.push(OAuth2Scope::new(scope_type.to_string()));
         self
     }
-    
+
     /// Add multiple scopes to this collection
     #[must_use]
     pub fn with_all(mut self, scope_types: impl IntoIterator<Item = ScopeType>) -> Self {
@@ -233,7 +252,7 @@ impl Scope {
         }
         self
     }
-    
+
     /// Combine with another scope collection
     #[must_use]
     pub fn combine(mut self, other: Self) -> Self {
@@ -246,13 +265,13 @@ impl Scope {
     pub fn into_oauth2_scopes(self) -> Vec<OAuth2Scope> {
         self.scopes
     }
-    
+
     /// Get a reference to the contained `OAuth2` scopes
     #[must_use]
     pub fn as_oauth2_scopes(&self) -> &[OAuth2Scope] {
         &self.scopes
     }
-    
+
     /// Convert this scope collection into a single `OAuth2Scope`
     /// for use with the oauth2 crate
     #[must_use]
@@ -261,7 +280,7 @@ impl Scope {
     }
 
     // Accounting scopes
-    
+
     /// Create a scope for full access to transactions
     #[must_use]
     pub fn accounting_transactions() -> Self {
@@ -335,7 +354,7 @@ impl Scope {
     }
 
     // Assets scopes
-    
+
     /// Create a scope for full access to assets
     #[must_use]
     pub fn assets() -> Self {
@@ -349,7 +368,7 @@ impl Scope {
     }
 
     // Files scopes
-    
+
     /// Create a scope for full access to files
     #[must_use]
     pub fn files() -> Self {
@@ -363,7 +382,7 @@ impl Scope {
     }
 
     // Payroll scopes
-    
+
     /// Create a scope for full access to employees
     #[must_use]
     pub fn payroll_employees() -> Self {
@@ -425,7 +444,7 @@ impl Scope {
     }
 
     // Projects scopes
-    
+
     /// Create a scope for full access to projects
     #[must_use]
     pub fn projects() -> Self {
@@ -447,9 +466,9 @@ impl Scope {
             ScopeType::AccountingContacts(Permission::ReadOnly)
         ]
     }
-    
+
     /// Shorthand for all accounting scopes (read-only)
-    #[must_use] 
+    #[must_use]
     pub fn all_accounting_read() -> Self {
         crate::scopes![
             ScopeType::AccountingTransactions(Permission::ReadOnly),
@@ -462,7 +481,7 @@ impl Scope {
             ScopeType::AccountingAttachments(Permission::ReadOnly)
         ]
     }
-    
+
     /// Shorthand for all accounting scopes (with read-write permission)
     #[must_use]
     pub fn all_accounting() -> Self {
@@ -477,7 +496,7 @@ impl Scope {
             ScopeType::AccountingAttachments(Permission::ReadWrite)
         ]
     }
-    
+
     /// Shorthand for all scopes (read-only)
     #[must_use]
     pub fn all_read() -> Self {
@@ -491,7 +510,7 @@ impl Scope {
             .with(ScopeType::PayrollTimesheets(Permission::ReadOnly))
             .with(ScopeType::Projects(Permission::ReadOnly))
     }
-    
+
     /// Shorthand for all scopes (with read-write permission)
     #[must_use]
     pub fn all() -> Self {
@@ -512,12 +531,9 @@ impl fmt::Display for Scope {
         if self.scopes.is_empty() {
             return write!(f, "");
         }
-        
-        let scope_strs: Vec<String> = self.scopes
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-            
+
+        let scope_strs: Vec<String> = self.scopes.iter().map(|s| s.to_string()).collect();
+
         write!(f, "{}", scope_strs.join(" "))
     }
 }
@@ -542,7 +558,9 @@ impl From<Scope> for OAuth2Scope {
 
 impl From<OAuth2Scope> for Scope {
     fn from(scope: OAuth2Scope) -> Self {
-        Self { scopes: vec![scope] }
+        Self {
+            scopes: vec![scope],
+        }
     }
 }
 
@@ -557,11 +575,11 @@ impl FromIterator<ScopeType> for Scope {
 }
 
 /// Macro to create a complete scope containing multiple scope types
-/// 
+///
 /// # Examples
 /// ```
 /// use xero_rs::{scopes, scope::ScopeType, scope::Permission};
-/// 
+///
 /// let scope = scopes![
 ///     ScopeType::AccountingContacts(Permission::ReadOnly),
 ///     ScopeType::Files(Permission::ReadWrite)

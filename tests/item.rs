@@ -4,9 +4,10 @@ extern crate tracing;
 mod test_utils;
 
 use anyhow::Result;
+use serial_test::serial;
 use std::env;
 use uuid::Uuid;
-use xero_rs::{item, KeyPair};
+use xero_rs::{KeyPair, item};
 
 // Helper function to generate unique timestamps for test data
 fn unique_timestamp() -> u64 {
@@ -17,6 +18,7 @@ fn unique_timestamp() -> u64 {
 }
 
 #[tokio::test]
+#[serial]
 async fn list_items() -> Result<()> {
     test_utils::do_setup();
 
@@ -49,6 +51,7 @@ async fn list_items() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn list_items_with_filters() -> Result<()> {
     test_utils::do_setup();
 
@@ -82,6 +85,7 @@ async fn list_items_with_filters() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn get_item() -> Result<()> {
     test_utils::do_setup();
 
@@ -148,6 +152,7 @@ async fn get_item() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn get_item_by_code() -> Result<()> {
     test_utils::do_setup();
 
@@ -214,6 +219,7 @@ async fn get_item_by_code() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn create_update_delete_item() -> Result<()> {
     test_utils::do_setup();
 
@@ -277,6 +283,7 @@ async fn create_update_delete_item() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn create_item_with_details() -> Result<()> {
     test_utils::do_setup();
 
@@ -323,6 +330,7 @@ async fn create_item_with_details() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn create_multiple_items() -> Result<()> {
     test_utils::do_setup();
 
@@ -369,6 +377,7 @@ async fn create_multiple_items() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn update_or_create_item() -> Result<()> {
     test_utils::do_setup();
 
@@ -420,6 +429,7 @@ async fn update_or_create_item() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn item_history() -> Result<()> {
     test_utils::do_setup();
 
@@ -471,6 +481,7 @@ async fn item_history() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn tracked_inventory_item() -> Result<()> {
     test_utils::do_setup();
 
@@ -513,7 +524,9 @@ async fn tracked_inventory_item() -> Result<()> {
                     assert_eq!(qty, rust_decimal::Decimal::ZERO);
                 }
             } else {
-                info!("Note: Inventory tracking was not enabled - this might require specific organization settings or account codes");
+                info!(
+                    "Note: Inventory tracking was not enabled - this might require specific organization settings or account codes"
+                );
             }
 
             // Clean up
@@ -530,6 +543,7 @@ async fn tracked_inventory_item() -> Result<()> {
 }
 
 #[tokio::test]
+#[serial]
 async fn error_handling() -> Result<()> {
     test_utils::do_setup();
 
