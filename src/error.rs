@@ -45,7 +45,7 @@ pub enum ErrorType {
     Other(String),
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(clippy::module_name_repetitions)]
 pub struct ValidationError {
@@ -118,14 +118,15 @@ impl fmt::Display for Response {
                     }
                 }
                 if let Some(timesheet_errors) = timesheets
-                    && !timesheet_errors.is_empty() {
-                        write!(f, "\nTimesheet errors:")?;
-                        for ts_error in timesheet_errors {
-                            for error in &ts_error.validation_errors {
-                                write!(f, "\n  - {}", error.message)?;
-                            }
+                    && !timesheet_errors.is_empty()
+                {
+                    write!(f, "\nTimesheet errors:")?;
+                    for ts_error in timesheet_errors {
+                        for error in &ts_error.validation_errors {
+                            write!(f, "\n  - {}", error.message)?;
                         }
                     }
+                }
             }
             ErrorType::QueryParseException => {
                 write!(

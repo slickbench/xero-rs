@@ -1,8 +1,8 @@
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
-use time::Date;
-use std::str::FromStr;
 use crate::utils::date_format::{xero_date_format, xero_date_format_option};
+use serde::{Deserialize, Serialize};
+use std::str::FromStr;
+use time::Date;
+use uuid::Uuid;
 
 /// Calendar types supported by the Xero Payroll API
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -68,7 +68,8 @@ pub struct PayCalendar {
 
 impl PayCalendar {
     /// Returns the end date of the pay period, which is the day before the payment date
-    #[must_use] pub fn end_date(&self) -> Date {
+    #[must_use]
+    pub fn end_date(&self) -> Date {
         self.payment_date.saturating_sub(time::Duration::days(1))
     }
 }

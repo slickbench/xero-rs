@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use oauth2::{
-    basic::{BasicTokenIntrospectionResponse, BasicTokenType},
     EndpointNotSet, EndpointSet, RefreshToken, StandardRevocableToken,
+    basic::{BasicTokenIntrospectionResponse, BasicTokenType},
 };
 use serde::{Deserialize, Serialize};
 

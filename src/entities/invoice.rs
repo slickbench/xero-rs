@@ -475,7 +475,7 @@ pub struct HistoryRecordsRequest {
 }
 
 /// Attachment details for an invoice
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct Attachment {
     #[serde(rename = "AttachmentID")]

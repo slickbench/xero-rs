@@ -1334,7 +1334,8 @@ impl PurchaseOrdersApi<'_> {
     /// Create a new purchase order
     #[instrument(skip(self, builder))]
     pub async fn create(&self, builder: &purchase_order::Builder) -> Result<PurchaseOrder> {
-        let result: MutationResponse = self.client.put(purchase_order::ENDPOINT, builder).await?;
+        let request = purchase_order::PurchaseOrdersRequest::single(builder);
+        let result: MutationResponse = self.client.put(purchase_order::ENDPOINT, &request).await?;
         result
             .data
             .get_purchase_orders()
@@ -1345,6 +1346,30 @@ impl PurchaseOrdersApi<'_> {
                 status_code: reqwest::StatusCode::NOT_FOUND,
                 response_body: Some(
                     "Failed to create purchase order - no purchase order in response".to_string(),
+                ),
+            })
+    }
+
+    /// Update an existing purchase order
+    #[instrument(skip(self, builder))]
+    pub async fn update(
+        &self,
+        purchase_order_id: Uuid,
+        builder: &purchase_order::Builder,
+    ) -> Result<PurchaseOrder> {
+        let endpoint = format!("{}{}", purchase_order::ENDPOINT, purchase_order_id);
+        let request = purchase_order::PurchaseOrdersRequest::single(builder);
+        let result: MutationResponse = self.client.post(&endpoint, &request).await?;
+        result
+            .data
+            .get_purchase_orders()
+            .and_then(|po| po.into_iter().next())
+            .ok_or(Error::NotFound {
+                entity: "PurchaseOrder".to_string(),
+                url: endpoint,
+                status_code: reqwest::StatusCode::NOT_FOUND,
+                response_body: Some(
+                    "Failed to update purchase order - no purchase order in response".to_string(),
                 ),
             })
     }
