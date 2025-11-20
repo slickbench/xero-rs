@@ -14,28 +14,35 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
-    - uses: Swatinem/rust-cache@v1
+    - uses: actions/checkout@v4
+    - name: Install Rust stable
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: clippy
+    - uses: Swatinem/rust-cache@v2
     - name: Run Clippy
-      run: cargo clippy
+      run: cargo clippy --all-features --all-targets -- -D warnings
 
   test:
     runs-on: ubuntu-latest
 
-    container:
-      image: ghcr.io/slickbench/docker-rust-base:main
-      options: --security-opt seccomp=unconfined
-
     steps:
-    - uses: actions/checkout@v2
-    - uses: Swatinem/rust-cache@v1
+    - uses: actions/checkout@v4
+    - name: Install Rust nightly
+      uses: dtolnay/rust-toolchain@nightly
+      with:
+        components: llvm-tools-preview
+    - name: Install cargo-llvm-cov
+      uses: taiki-e/install-action@cargo-llvm-cov
+    - uses: Swatinem/rust-cache@v2
     - name: Run Tests
       env:
         XERO_CLIENT_ID: ${{ secrets.XERO_CLIENT_ID }}
         XERO_CLIENT_SECRET: ${{ secrets.XERO_CLIENT_SECRET }}
+        XERO_TENANT_ID: ${{ secrets.XERO_TENANT_ID }}
       run: cargo llvm-cov --all-features --lcov --output-path lcov.info
     - name: Upload to codecov.io
-      uses: codecov/codecov-action@v2
+      uses: codecov/codecov-action@v4
       with:
         files: lcov.info
         fail_ci_if_error: true
