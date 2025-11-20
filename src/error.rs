@@ -19,14 +19,46 @@ impl fmt::Display for OAuth2ErrorResponse {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+/// Xero API error types.
+///
+/// This enum represents the different types of errors returned by the Xero API.
+/// The `Type` field in the JSON response is used as a discriminator.
+///
+/// # ValidationException
+/// The most common error type, returned when validation fails on submitted entities.
+///
+/// **Breaking Change (v0.2.0-alpha.4):** The `elements` field no longer uses `#[serde(default)]`.
+/// If the API returns a ValidationException without an Elements array, deserialization will now fail
+/// instead of silently defaulting to an empty vector. This improves error visibility.
+///
+/// ## Example Response
+/// ```json
+/// {
+///   "ErrorNumber": 10,
+///   "Type": "ValidationException",
+///   "Message": "A validation exception occurred",
+///   "Elements": [{
+///     "QuoteID": "efcef70f-f4f9-4baf-83b6-b5eac086c91b",
+///     "Status": "ACCEPTED",
+///     "ValidationErrors": [
+///       {"Message": "Contact requires a valid ContactId or ContactName"}
+///     ]
+///   }]
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "Type", rename_all = "PascalCase")]
 #[allow(clippy::module_name_repetitions)]
 pub enum ErrorType {
+    /// Validation error with details about which entity fields failed validation.
+    ///
+    /// # Fields
+    /// - `elements`: Array of validation errors per entity. **No longer defaults to empty array** - missing Elements will cause deserialization error.
+    /// - `timesheets`: Optional timesheet-specific validation errors (defaults to None).
     ValidationException {
-        #[serde(default)]
+        #[serde(rename = "Elements")]
         elements: Vec<ValidationExceptionElement>,
-        #[serde(default)]
+        #[serde(rename = "Timesheets", default)]
         timesheets: Option<Vec<TimesheetValidationError>>,
     },
     PostDataInvalidException,
@@ -52,25 +84,72 @@ pub struct ValidationError {
     pub message: String,
 }
 
+/// The object being validated in a ValidationException.
+///
+/// Xero returns validation errors with the entity that failed validation.
+/// This enum uses `#[serde(untagged)]` to match based on field presence,
+/// since the API doesn't include a "Type" discriminator field.
+///
+/// # Entity Variants
+/// - `PurchaseOrder`: Contains purchase order ID
+/// - `Quote`: Contains quote ID and optional status
+/// - `Unknown`: Fallback for unsupported entity types, preserves raw data
+///
+/// # Example Response
+/// ```json
+/// {
+///   "QuoteID": "efcef70f-f4f9-4baf-83b6-b5eac086c91b",
+///   "Status": "ACCEPTED",
+///   "ValidationErrors": [{"Message": "Contact requires a valid ContactId"}]
+/// }
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "Type", rename_all = "UPPERCASE")]
+#[serde(untagged)]
 pub enum ValidationExceptionElementObject {
-    #[serde(rename_all = "PascalCase")]
     PurchaseOrder {
         #[serde(rename = "PurchaseOrderID")]
         purchase_order_id: Uuid,
     },
+    Quote {
+        #[serde(rename = "QuoteID")]
+        quote_id: Uuid,
+        #[serde(rename = "Status")]
+        status: Option<String>,
+    },
+    /// Fallback variant for entity types not yet explicitly supported.
+    /// Preserves the raw JSON for debugging and future compatibility.
+    Unknown(serde_json::Value),
 }
 
-#[derive(Debug, Clone, Deserialize)]
+/// A validation error element containing the entity being validated and its errors.
+///
+/// Each element combines:
+/// - The entity that failed validation (flattened from `object`)
+/// - The validation error messages for that entity
+///
+/// The `object` field is flattened, meaning its fields appear at the same level
+/// as `validation_errors` in the JSON response.
+///
+/// # Example
+/// ```json
+/// {
+///   "QuoteID": "efcef70f-f4f9-4baf-83b6-b5eac086c91b",
+///   "Status": "ACCEPTED",
+///   "ValidationErrors": [{"Message": "Contact requires a valid ContactId"}]
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct ValidationExceptionElement {
+    /// The validation error messages for this entity.
     pub validation_errors: Vec<ValidationError>,
+    /// The entity being validated (Quote, PurchaseOrder, or Unknown).
+    /// Fields from this enum variant are flattened into the parent struct.
     #[serde(flatten)]
     pub object: ValidationExceptionElementObject,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 #[allow(dead_code)]
 pub struct Response {
@@ -153,7 +232,7 @@ pub struct ForbiddenResponse {
     extensions: HashMap<String, String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct TimesheetValidationError {
     #[serde(default)]

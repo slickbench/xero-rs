@@ -442,6 +442,15 @@ impl Client {
         let mut attempts = 0;
         let mut token_refreshed = false;
 
+        // Log the request payload for debugging
+        if let Ok(json_body) = serde_json::to_string_pretty(body) {
+            tracing::debug!(
+                url = %url,
+                request_body = %json_body,
+                "POST request payload"
+            );
+        }
+
         loop {
             // Build and execute the request
             let response = self
@@ -971,7 +980,41 @@ impl Client {
                     // Try to parse as API error response
                     match serde_json::from_str::<error::Response>(&text) {
                         Ok(api_error) => {
-                            tracing::error!("API error response: {:?}", api_error);
+                            tracing::error!(
+                                url = %url,
+                                status = %status,
+                                error_number = ?api_error.error_number,
+                                message = ?api_error.message,
+                                detail = ?api_error.detail,
+                                error_type = ?std::mem::discriminant(&api_error.error),
+                                raw_response = %text,
+                                "API error response from Xero"
+                            );
+
+                            // Additional logging for ValidationException
+                            if let error::ErrorType::ValidationException {
+                                ref elements,
+                                ref timesheets,
+                            } = api_error.error
+                            {
+                                tracing::warn!(
+                                    elements_count = elements.len(),
+                                    has_timesheets = timesheets.is_some(),
+                                    "ValidationException details: {} validation elements",
+                                    elements.len()
+                                );
+
+                                // Note: Since we removed #[serde(default)], reaching this code with
+                                // empty elements means Xero actually sent Elements: [] in the response.
+                                // This is unusual but not necessarily a deserialization error.
+                                if elements.is_empty() {
+                                    tracing::warn!(
+                                        "Unusual: Xero returned ValidationException with empty Elements array. Raw response: {}",
+                                        text
+                                    );
+                                }
+                            }
+
                             Err(Error::API(api_error))
                         }
                         Err(e) => {

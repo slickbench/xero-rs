@@ -277,6 +277,13 @@ pub struct ListParameters {
     /// Filter by a comma-separated list of invoice IDs
     #[serde(rename = "IDs", skip_serializing_if = "Option::is_none")]
     pub ids: Option<String>,
+
+    /// Unit price decimal places (4 or 2, defaults to 2 if not specified)
+    ///
+    /// By default, the API accepts unit prices (UnitAmount) to two decimal places.
+    /// Set to 4 to get unit prices with 4 decimal precision.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unitdp: Option<u8>,
 }
 
 impl ListParameters {
@@ -372,6 +379,16 @@ impl ListParameters {
             .collect::<Vec<_>>()
             .join(",");
         self.ids = Some(ids_str);
+        self
+    }
+
+    /// Set unit price decimal places (4 for 4 decimal precision, 2 for default)
+    ///
+    /// By default, the API returns unit prices with 2 decimal places.
+    /// Use this to request 4 decimal places for more precision.
+    #[must_use]
+    pub fn with_unitdp(mut self, unitdp: u8) -> Self {
+        self.unitdp = Some(unitdp);
         self
     }
 }
