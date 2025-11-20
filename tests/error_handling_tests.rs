@@ -1,5 +1,4 @@
 use serde_json::json;
-use uuid::Uuid;
 use xero_rs::error::{ErrorType, Response as ErrorResponse};
 
 #[test]
@@ -32,11 +31,18 @@ fn test_query_parse_exception_handling() {
 
 #[test]
 fn test_validation_exception_handling() {
-    // Test that ValidationException can be deserialized
+    // Test that ValidationException can be deserialized with Elements array
     let error_json = json!({
         "ErrorNumber": 10,
         "Type": "ValidationException",
-        "Message": "A validation error occurred"
+        "Message": "A validation error occurred",
+        "Elements": [{
+            "QuoteID": "efcef70f-f4f9-4baf-83b6-b5eac086c91b",
+            "Status": "ACCEPTED",
+            "ValidationErrors": [{
+                "Message": "Contact requires a valid ContactId or ContactName"
+            }]
+        }]
     });
 
     let result: Result<ErrorResponse, _> = serde_json::from_value(error_json);
@@ -48,8 +54,14 @@ fn test_validation_exception_handling() {
 
     let error_response = result.unwrap();
     match &error_response.error {
-        ErrorType::ValidationException { .. } => {
-            // Success - error type was recognized
+        ErrorType::ValidationException { elements, .. } => {
+            // Verify elements were parsed correctly
+            assert_eq!(elements.len(), 1, "Expected 1 validation element");
+            assert_eq!(
+                elements[0].validation_errors.len(),
+                1,
+                "Expected 1 validation error"
+            );
         }
         _ => panic!(
             "Expected ValidationException, got {:?}",
@@ -82,7 +94,12 @@ fn test_all_error_types_deserialize() {
     let error_types = vec![
         (
             "ValidationException",
-            json!({"Type": "ValidationException", "ErrorNumber": 10, "Message": "Test"}),
+            json!({
+                "Type": "ValidationException",
+                "ErrorNumber": 10,
+                "Message": "Test",
+                "Elements": []
+            }),
         ),
         (
             "PostDataInvalidException",
