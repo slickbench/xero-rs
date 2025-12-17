@@ -8,14 +8,47 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
 
+/// OAuth2 error response from Xero's identity server.
+///
+/// This captures both standard OAuth2 error responses (RFC 6749 Section 5.2)
+/// and Xero-specific error fields.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OAuth2ErrorResponse {}
+pub struct OAuth2ErrorResponse {
+    /// Standard OAuth2 error code (e.g., "invalid_client", "invalid_grant")
+    #[serde(default)]
+    pub error: Option<String>,
+    /// Human-readable error description
+    #[serde(default)]
+    pub error_description: Option<String>,
+    /// URI with more information about the error
+    #[serde(default)]
+    pub error_uri: Option<String>,
+    /// Xero-specific OAuth problem field (legacy OAuth1-style errors)
+    #[serde(default)]
+    pub oauth_problem: Option<String>,
+    /// Additional advice from Xero
+    #[serde(default)]
+    pub oauth_problem_advice: Option<String>,
+}
 
 impl oauth2::ErrorResponse for OAuth2ErrorResponse {}
 
 impl fmt::Display for OAuth2ErrorResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "OAuth2 error occurred")
+        if let Some(error) = &self.error {
+            write!(f, "OAuth2 error: {error}")?;
+            if let Some(desc) = &self.error_description {
+                write!(f, " - {desc}")?;
+            }
+        } else if let Some(problem) = &self.oauth_problem {
+            write!(f, "OAuth problem: {problem}")?;
+            if let Some(advice) = &self.oauth_problem_advice {
+                write!(f, " - {advice}")?;
+            }
+        } else {
+            write!(f, "OAuth2 error occurred (no details available)")?;
+        }
+        Ok(())
     }
 }
 

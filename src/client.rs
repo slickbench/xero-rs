@@ -151,6 +151,15 @@ impl Client {
             .unwrap()
     }
 
+    /// Extract and persist rate limit information from response headers
+    async fn update_rate_limit_info(&self, headers: &reqwest::header::HeaderMap) {
+        let info = RateLimitInfo::from_response_headers(headers);
+        info.log_if_near_limit();
+
+        let mut state = self.token_state.write().await;
+        state.rate_limit_info = info;
+    }
+
     #[instrument]
     fn build_oauth_client(key_pair: KeyPair) -> OAuthClient {
         let client = oauth2::Client::new(key_pair.0);
@@ -372,62 +381,66 @@ impl Client {
                 .await;
 
             match response {
-                Ok(response) => match Self::handle_response(response).await {
-                    Ok(result) => return Ok(result),
-                    Err(e) => {
-                        // Check for token expiry
-                        if let Error::API(ref api_err) = e
-                            && !token_refreshed
-                            && matches!(api_err.error, error::ErrorType::UnauthorisedException)
-                        {
-                            // Check if we have refresh credentials or token
-                            let has_refresh_capability = self.refresh_credentials.is_some()
-                                || self.token_state.read().await.refresh_token.is_some();
+                Ok(response) => {
+                    self.update_rate_limit_info(response.headers()).await;
 
-                            if has_refresh_capability && self.refresh_credentials.is_some() {
-                                tracing::debug!("Token expired, attempting automatic refresh");
-                                let key_pair = self.refresh_credentials.clone().unwrap();
+                    match Self::handle_response(response).await {
+                        Ok(result) => return Ok(result),
+                        Err(e) => {
+                            // Check for token expiry
+                            if let Error::API(ref api_err) = e
+                                && !token_refreshed
+                                && matches!(api_err.error, error::ErrorType::UnauthorisedException)
+                            {
+                                // Check if we have refresh credentials or token
+                                let has_refresh_capability = self.refresh_credentials.is_some()
+                                    || self.token_state.read().await.refresh_token.is_some();
 
-                                // Attempt to refresh the token
-                                match self.refresh_access_token(key_pair).await {
-                                    Ok(()) => {
-                                        tracing::info!("Successfully refreshed access token");
-                                        token_refreshed = true;
-                                        // Retry the request with the new token
-                                        continue;
-                                    }
-                                    Err(refresh_err) => {
-                                        tracing::error!(
-                                            "Failed to refresh access token: {:?}",
-                                            refresh_err
-                                        );
-                                        // Return the original unauthorized error if refresh fails
-                                        return Err(e);
+                                if has_refresh_capability && self.refresh_credentials.is_some() {
+                                    tracing::debug!("Token expired, attempting automatic refresh");
+                                    let key_pair = self.refresh_credentials.clone().unwrap();
+
+                                    // Attempt to refresh the token
+                                    match self.refresh_access_token(key_pair).await {
+                                        Ok(()) => {
+                                            tracing::info!("Successfully refreshed access token");
+                                            token_refreshed = true;
+                                            // Retry the request with the new token
+                                            continue;
+                                        }
+                                        Err(refresh_err) => {
+                                            tracing::error!(
+                                                "Failed to refresh access token: {:?}",
+                                                refresh_err
+                                            );
+                                            // Return the original unauthorized error if refresh fails
+                                            return Err(e);
+                                        }
                                     }
                                 }
                             }
-                        }
-                        // Check for rate limiting
-                        if let Error::RateLimitExceeded { retry_after, .. } = e
-                            && attempts < MAX_RETRY_ATTEMPTS
-                        {
-                            attempts += 1;
-                            let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
+                            // Check for rate limiting
+                            if let Error::RateLimitExceeded { retry_after, .. } = e
+                                && attempts < MAX_RETRY_ATTEMPTS
+                            {
+                                attempts += 1;
+                                let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
 
-                            tracing::warn!(
-                                "Rate limit exceeded (attempt {}/{}), waiting for {:?} before retrying",
-                                attempts,
-                                MAX_RETRY_ATTEMPTS,
-                                wait_time
-                            );
+                                tracing::warn!(
+                                    "Rate limit exceeded (attempt {}/{}), waiting for {:?} before retrying",
+                                    attempts,
+                                    MAX_RETRY_ATTEMPTS,
+                                    wait_time
+                                );
 
-                            // Wait for the specified time before retrying
-                            sleep(wait_time).await;
-                            continue;
+                                // Wait for the specified time before retrying
+                                sleep(wait_time).await;
+                                continue;
+                            }
+                            return Err(e);
                         }
-                        return Err(e);
                     }
-                },
+                }
                 Err(e) => return Err(e.into()),
             }
         }
@@ -461,62 +474,66 @@ impl Client {
                 .await;
 
             match response {
-                Ok(response) => match Self::handle_response(response).await {
-                    Ok(result) => return Ok(result),
-                    Err(e) => {
-                        // Check for token expiry
-                        if let Error::API(ref api_err) = e
-                            && !token_refreshed
-                            && matches!(api_err.error, error::ErrorType::UnauthorisedException)
-                        {
-                            // Check if we have refresh credentials or token
-                            let has_refresh_capability = self.refresh_credentials.is_some()
-                                || self.token_state.read().await.refresh_token.is_some();
+                Ok(response) => {
+                    self.update_rate_limit_info(response.headers()).await;
 
-                            if has_refresh_capability && self.refresh_credentials.is_some() {
-                                tracing::debug!("Token expired, attempting automatic refresh");
-                                let key_pair = self.refresh_credentials.clone().unwrap();
+                    match Self::handle_response(response).await {
+                        Ok(result) => return Ok(result),
+                        Err(e) => {
+                            // Check for token expiry
+                            if let Error::API(ref api_err) = e
+                                && !token_refreshed
+                                && matches!(api_err.error, error::ErrorType::UnauthorisedException)
+                            {
+                                // Check if we have refresh credentials or token
+                                let has_refresh_capability = self.refresh_credentials.is_some()
+                                    || self.token_state.read().await.refresh_token.is_some();
 
-                                // Attempt to refresh the token
-                                match self.refresh_access_token(key_pair).await {
-                                    Ok(()) => {
-                                        tracing::info!("Successfully refreshed access token");
-                                        token_refreshed = true;
-                                        // Retry the request with the new token
-                                        continue;
-                                    }
-                                    Err(refresh_err) => {
-                                        tracing::error!(
-                                            "Failed to refresh access token: {:?}",
-                                            refresh_err
-                                        );
-                                        // Return the original unauthorized error if refresh fails
-                                        return Err(e);
+                                if has_refresh_capability && self.refresh_credentials.is_some() {
+                                    tracing::debug!("Token expired, attempting automatic refresh");
+                                    let key_pair = self.refresh_credentials.clone().unwrap();
+
+                                    // Attempt to refresh the token
+                                    match self.refresh_access_token(key_pair).await {
+                                        Ok(()) => {
+                                            tracing::info!("Successfully refreshed access token");
+                                            token_refreshed = true;
+                                            // Retry the request with the new token
+                                            continue;
+                                        }
+                                        Err(refresh_err) => {
+                                            tracing::error!(
+                                                "Failed to refresh access token: {:?}",
+                                                refresh_err
+                                            );
+                                            // Return the original unauthorized error if refresh fails
+                                            return Err(e);
+                                        }
                                     }
                                 }
                             }
-                        }
-                        // Check for rate limiting
-                        if let Error::RateLimitExceeded { retry_after, .. } = e
-                            && attempts < MAX_RETRY_ATTEMPTS
-                        {
-                            attempts += 1;
-                            let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
+                            // Check for rate limiting
+                            if let Error::RateLimitExceeded { retry_after, .. } = e
+                                && attempts < MAX_RETRY_ATTEMPTS
+                            {
+                                attempts += 1;
+                                let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
 
-                            tracing::warn!(
-                                "Rate limit exceeded (attempt {}/{}), waiting for {:?} before retrying",
-                                attempts,
-                                MAX_RETRY_ATTEMPTS,
-                                wait_time
-                            );
+                                tracing::warn!(
+                                    "Rate limit exceeded (attempt {}/{}), waiting for {:?} before retrying",
+                                    attempts,
+                                    MAX_RETRY_ATTEMPTS,
+                                    wait_time
+                                );
 
-                            // Wait for the specified time before retrying
-                            sleep(wait_time).await;
-                            continue;
+                                // Wait for the specified time before retrying
+                                sleep(wait_time).await;
+                                continue;
+                            }
+                            return Err(e);
                         }
-                        return Err(e);
                     }
-                },
+                }
                 Err(e) => return Err(e.into()),
             }
         }
@@ -541,62 +558,66 @@ impl Client {
                 .await;
 
             match response {
-                Ok(response) => match Self::handle_response(response).await {
-                    Ok(result) => return Ok(result),
-                    Err(e) => {
-                        // Check for token expiry
-                        if let Error::API(ref api_err) = e
-                            && !token_refreshed
-                            && matches!(api_err.error, error::ErrorType::UnauthorisedException)
-                        {
-                            // Check if we have refresh credentials or token
-                            let has_refresh_capability = self.refresh_credentials.is_some()
-                                || self.token_state.read().await.refresh_token.is_some();
+                Ok(response) => {
+                    self.update_rate_limit_info(response.headers()).await;
 
-                            if has_refresh_capability && self.refresh_credentials.is_some() {
-                                tracing::debug!("Token expired, attempting automatic refresh");
-                                let key_pair = self.refresh_credentials.clone().unwrap();
+                    match Self::handle_response(response).await {
+                        Ok(result) => return Ok(result),
+                        Err(e) => {
+                            // Check for token expiry
+                            if let Error::API(ref api_err) = e
+                                && !token_refreshed
+                                && matches!(api_err.error, error::ErrorType::UnauthorisedException)
+                            {
+                                // Check if we have refresh credentials or token
+                                let has_refresh_capability = self.refresh_credentials.is_some()
+                                    || self.token_state.read().await.refresh_token.is_some();
 
-                                // Attempt to refresh the token
-                                match self.refresh_access_token(key_pair).await {
-                                    Ok(()) => {
-                                        tracing::info!("Successfully refreshed access token");
-                                        token_refreshed = true;
-                                        // Retry the request with the new token
-                                        continue;
-                                    }
-                                    Err(refresh_err) => {
-                                        tracing::error!(
-                                            "Failed to refresh access token: {:?}",
-                                            refresh_err
-                                        );
-                                        // Return the original unauthorized error if refresh fails
-                                        return Err(e);
+                                if has_refresh_capability && self.refresh_credentials.is_some() {
+                                    tracing::debug!("Token expired, attempting automatic refresh");
+                                    let key_pair = self.refresh_credentials.clone().unwrap();
+
+                                    // Attempt to refresh the token
+                                    match self.refresh_access_token(key_pair).await {
+                                        Ok(()) => {
+                                            tracing::info!("Successfully refreshed access token");
+                                            token_refreshed = true;
+                                            // Retry the request with the new token
+                                            continue;
+                                        }
+                                        Err(refresh_err) => {
+                                            tracing::error!(
+                                                "Failed to refresh access token: {:?}",
+                                                refresh_err
+                                            );
+                                            // Return the original unauthorized error if refresh fails
+                                            return Err(e);
+                                        }
                                     }
                                 }
                             }
-                        }
-                        // Check for rate limiting
-                        if let Error::RateLimitExceeded { retry_after, .. } = e
-                            && attempts < MAX_RETRY_ATTEMPTS
-                        {
-                            attempts += 1;
-                            let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
+                            // Check for rate limiting
+                            if let Error::RateLimitExceeded { retry_after, .. } = e
+                                && attempts < MAX_RETRY_ATTEMPTS
+                            {
+                                attempts += 1;
+                                let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
 
-                            tracing::warn!(
-                                "Rate limit exceeded (attempt {}/{}), waiting for {:?} before retrying",
-                                attempts,
-                                MAX_RETRY_ATTEMPTS,
-                                wait_time
-                            );
+                                tracing::warn!(
+                                    "Rate limit exceeded (attempt {}/{}), waiting for {:?} before retrying",
+                                    attempts,
+                                    MAX_RETRY_ATTEMPTS,
+                                    wait_time
+                                );
 
-                            // Wait for the specified time before retrying
-                            sleep(wait_time).await;
-                            continue;
+                                // Wait for the specified time before retrying
+                                sleep(wait_time).await;
+                                continue;
+                            }
+                            return Err(e);
                         }
-                        return Err(e);
                     }
-                },
+                }
                 Err(e) => return Err(e.into()),
             }
         }
@@ -617,11 +638,46 @@ impl Client {
 
             match response {
                 Ok(response) => {
+                    self.update_rate_limit_info(response.headers()).await;
+
                     let status = response.status();
 
                     // Special handling for DELETE responses
                     if status == StatusCode::NO_CONTENT || status == StatusCode::OK {
                         return Ok(());
+                    }
+
+                    // Check for rate limiting BEFORE other error handling
+                    if status == StatusCode::TOO_MANY_REQUESTS {
+                        let retry_after = response
+                            .headers()
+                            .get(header::RETRY_AFTER)
+                            .and_then(|v| v.to_str().ok())
+                            .and_then(|s| s.parse::<u64>().ok())
+                            .map(Duration::from_secs);
+
+                        let rate_limit_problem = response
+                            .headers()
+                            .get(HEADER_RATE_LIMIT_PROBLEM)
+                            .and_then(|v| v.to_str().ok())
+                            .map(String::from);
+
+                        let text = response.text().await.unwrap_or_default();
+                        let url = url.to_string();
+
+                        tracing::warn!(
+                            "Rate limit exceeded for {}: problem={:?}, retry_after={:?}",
+                            url,
+                            rate_limit_problem,
+                            retry_after
+                        );
+
+                        return Err(Error::RateLimitExceeded {
+                            retry_after,
+                            status_code: status,
+                            url,
+                            response_body: Some(text),
+                        });
                     }
 
                     // Try to get error details
