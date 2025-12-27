@@ -110,8 +110,8 @@ pub struct Overpayment {
 pub struct Invoice {
     pub r#type: Type,
     pub contact: Contact,
-    #[serde(rename = "DateString", with = "xero_date_format")]
-    pub date: Date,
+    #[serde(rename = "DateString", default, with = "xero_date_format_option")]
+    pub date: Option<Date>,
     #[serde(rename = "DueDateString", default, with = "xero_date_format_option")]
     pub due_date: Option<Date>,
     #[serde(default)]

@@ -111,7 +111,23 @@ impl RateLimitInfo {
 struct TokenState {
     access_token: AccessToken,
     refresh_token: Option<RefreshToken>,
+    /// When the access token expires (if known)
+    expires_at: Option<std::time::Instant>,
     rate_limit_info: RateLimitInfo,
+}
+
+impl TokenState {
+    /// Calculate expiry time from token response's expires_in duration
+    fn calculate_expiry(expires_in: Option<std::time::Duration>) -> Option<std::time::Instant> {
+        expires_in.map(|duration| std::time::Instant::now() + duration)
+    }
+
+    /// Check if the token is expired or will expire within the given margin
+    fn is_expired_or_expiring(&self, margin: std::time::Duration) -> bool {
+        self.expires_at
+            .map(|expires_at| std::time::Instant::now() + margin >= expires_at)
+            .unwrap_or(false)
+    }
 }
 
 /// This is the client that is used for interacting with the Xero API. It handles OAuth 2 authentication
@@ -126,6 +142,12 @@ pub struct Client {
     /// When set via `with_auto_refresh()`, the client will automatically attempt to
     /// refresh the access token if a request fails with an unauthorized error.
     refresh_credentials: Option<KeyPair>,
+    /// Optional semaphore for limiting concurrent requests.
+    ///
+    /// Xero enforces a limit of 5 concurrent requests per organization.
+    /// When set via `with_concurrency_limit()`, the client will ensure
+    /// that no more than the specified number of requests are in flight.
+    concurrency_limiter: Option<Arc<tokio::sync::Semaphore>>,
 }
 
 impl Client {
@@ -213,15 +235,18 @@ impl Client {
 
         let access_token = token.access_token().clone();
         let refresh_token = token.refresh_token().cloned();
+        let expires_at = TokenState::calculate_expiry(token.expires_in());
 
         Ok(Self {
             token_state: Arc::new(RwLock::new(TokenState {
                 access_token,
                 refresh_token,
+                expires_at,
                 rate_limit_info: RateLimitInfo::default(),
             })),
             tenant_id: Arc::new(RwLock::new(None)),
             refresh_credentials: None,
+            concurrency_limiter: None,
         })
     }
 
@@ -251,10 +276,12 @@ impl Client {
             token_state: Arc::new(RwLock::new(TokenState {
                 access_token: token_result.access_token().clone(),
                 refresh_token: token_result.refresh_token().cloned(),
+                expires_at: TokenState::calculate_expiry(token_result.expires_in()),
                 rate_limit_info: RateLimitInfo::default(),
             })),
             tenant_id: Arc::new(RwLock::new(None)),
             refresh_credentials: None,
+            concurrency_limiter: None,
         })
     }
 
@@ -274,6 +301,7 @@ impl Client {
             info!("Successfully refreshed access token");
 
             token_state.access_token = token_result.access_token().clone();
+            token_state.expires_at = TokenState::calculate_expiry(token_result.expires_in());
             if let Some(new_refresh_token) = token_result.refresh_token() {
                 token_state.refresh_token = Some(new_refresh_token.clone());
                 info!("Successfully refreshed refresh token");
@@ -286,6 +314,7 @@ impl Client {
                 .map_err(Error::OAuth2)?;
             info!("Successfully refreshed access token");
             token_state.access_token = token_result.access_token().clone();
+            token_state.expires_at = TokenState::calculate_expiry(token_result.expires_in());
         } else {
             error!("No refresh token or credentials available");
         }
@@ -297,6 +326,71 @@ impl Client {
         trace!(?tenant_id, "updating tenant id");
         let mut current_tenant = self.tenant_id.write().await;
         *current_tenant = tenant_id;
+    }
+
+    /// Proactively ensure the access token is valid before making requests.
+    ///
+    /// This method checks if the token is expired or will expire within 60 seconds,
+    /// and automatically refreshes it if credentials are available.
+    ///
+    /// Unlike the automatic 401 retry mechanism, this prevents the initial failed
+    /// request and provides more predictable behavior.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if token refresh is needed but fails.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use xero_rs::{Client, KeyPair};
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let key_pair = KeyPair::from_env();
+    /// let client = Client::from_client_credentials(key_pair.clone(), None)
+    ///     .await?
+    ///     .with_auto_refresh(key_pair);
+    ///
+    /// // Proactively refresh before a batch of requests
+    /// client.ensure_valid_token().await?;
+    ///
+    /// // Now make requests knowing the token is fresh
+    /// let contacts = client.contacts().list_all().await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn ensure_valid_token(&self) -> Result<()> {
+        const REFRESH_MARGIN: std::time::Duration = std::time::Duration::from_secs(60);
+
+        let needs_refresh = {
+            let token_state = self.token_state.read().await;
+            token_state.is_expired_or_expiring(REFRESH_MARGIN)
+        };
+
+        if needs_refresh {
+            if let Some(key_pair) = &self.refresh_credentials {
+                tracing::debug!("Token expiring soon, proactively refreshing");
+                self.refresh_access_token(key_pair.clone()).await?;
+                tracing::info!("Proactively refreshed access token");
+            } else {
+                tracing::warn!(
+                    "Token is expiring but no refresh credentials available. \
+                    Call with_auto_refresh() to enable automatic refresh."
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Check if the current token is expired or will expire soon.
+    ///
+    /// Returns `true` if the token is expired or will expire within 60 seconds.
+    /// Returns `false` if the token is valid or expiry is unknown.
+    #[must_use]
+    pub async fn is_token_expiring(&self) -> bool {
+        const REFRESH_MARGIN: std::time::Duration = std::time::Duration::from_secs(60);
+        let token_state = self.token_state.read().await;
+        token_state.is_expired_or_expiring(REFRESH_MARGIN)
     }
 
     /// Enable automatic token refresh on 401 responses.
@@ -332,6 +426,41 @@ impl Client {
     #[must_use]
     pub fn without_auto_refresh(mut self) -> Self {
         self.refresh_credentials = None;
+        self
+    }
+
+    /// Enable concurrency limiting for API requests.
+    ///
+    /// Xero enforces a limit of 5 concurrent requests per organization.
+    /// This method adds a semaphore-based limiter to prevent exceeding this limit.
+    ///
+    /// # Arguments
+    ///
+    /// * `max_concurrent` - Maximum number of concurrent requests allowed (recommend 5 for Xero)
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use xero_rs::{Client, KeyPair};
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let key_pair = KeyPair::from_env();
+    /// let client = Client::from_client_credentials(key_pair.clone(), None)
+    ///     .await?
+    ///     .with_auto_refresh(key_pair)
+    ///     .with_concurrency_limit(5);  // Xero's concurrent request limit
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn with_concurrency_limit(mut self, max_concurrent: usize) -> Self {
+        self.concurrency_limiter = Some(Arc::new(tokio::sync::Semaphore::new(max_concurrent)));
+        self
+    }
+
+    /// Disable concurrency limiting.
+    #[must_use]
+    pub fn without_concurrency_limit(mut self) -> Self {
+        self.concurrency_limiter = None;
         self
     }
 
@@ -656,23 +785,25 @@ impl Client {
                             .and_then(|s| s.parse::<u64>().ok())
                             .map(Duration::from_secs);
 
-                        let rate_limit_problem = response
+                        let limit_type = response
                             .headers()
                             .get(HEADER_RATE_LIMIT_PROBLEM)
                             .and_then(|v| v.to_str().ok())
-                            .map(String::from);
+                            .map(error::RateLimitType::from_header)
+                            .unwrap_or(error::RateLimitType::Unknown("not specified".to_string()));
 
                         let text = response.text().await.unwrap_or_default();
                         let url = url.to_string();
 
                         tracing::warn!(
-                            "Rate limit exceeded for {}: problem={:?}, retry_after={:?}",
+                            "Rate limit exceeded for {}: limit_type={}, retry_after={:?}",
                             url,
-                            rate_limit_problem,
+                            limit_type,
                             retry_after
                         );
 
                         return Err(Error::RateLimitExceeded {
+                            limit_type,
                             retry_after,
                             status_code: status,
                             url,
@@ -930,11 +1061,12 @@ impl Client {
         // Handle rate limiting (429 Too Many Requests)
         if status == StatusCode::TOO_MANY_REQUESTS {
             // Extract rate limit headers
-            let rate_limit_problem = response
+            let limit_type = response
                 .headers()
                 .get(HEADER_RATE_LIMIT_PROBLEM)
                 .and_then(|v| v.to_str().ok())
-                .map(String::from);
+                .map(error::RateLimitType::from_header)
+                .unwrap_or(error::RateLimitType::Unknown("not specified".to_string()));
 
             let retry_after = response
                 .headers()
@@ -945,9 +1077,9 @@ impl Client {
 
             // Log rate limit hit with detailed information
             tracing::warn!(
-                "Rate limit exceeded for {}: problem={:?}, retry_after={:?}, day_remaining={:?}, minute_remaining={:?}, app_minute_remaining={:?}",
+                "Rate limit exceeded for {}: limit_type={}, retry_after={:?}, day_remaining={:?}, minute_remaining={:?}, app_minute_remaining={:?}",
                 url,
-                rate_limit_problem,
+                limit_type,
                 retry_after,
                 rate_limit_info.day_limit_remaining,
                 rate_limit_info.minute_limit_remaining,
@@ -958,6 +1090,7 @@ impl Client {
             let text = response.text().await.unwrap_or_default();
 
             return Err(Error::RateLimitExceeded {
+                limit_type,
                 retry_after,
                 status_code: status,
                 url,

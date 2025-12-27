@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0-alpha.5] - 2025-12-27
+
+### Breaking Changes
+- **Invoice.date field**: Changed from `Date` to `Option<Date>`
+  - Some Xero invoices may not have a `DateString` field
+  - Update code that accesses `invoice.date` to handle the Option
+
+### Added
+- **RateLimitType enum**: New enum to identify which rate limit was exceeded
+  - `Minute`: Per-tenant minute limit (60 calls/minute)
+  - `Daily`: Per-tenant daily limit (5000 calls/day)
+  - `AppMinute`: App-wide minute limit (10,000 calls/minute)
+  - Parsed from `X-Rate-Limit-Problem` header on 429 responses
+
+- **Token expiry tracking**: Client now tracks token expiration time
+  - `expires_at` field in internal token state
+  - Enables proactive token refresh before requests fail
+
+- **Proactive token refresh**: New `ensure_valid_token()` method
+  - Refreshes token if expired or expiring within 60 seconds
+  - Prevents failed requests due to token expiry
+  - New `is_token_expiring()` helper method
+
+- **Concurrency control**: Optional semaphore-based request limiting
+  - `with_concurrency_limit(n)` builder method
+  - Helps stay within Xero's 5 concurrent request limit
+  - `without_concurrency_limit()` to disable
+
+- **Validation error entity variants**: Added Invoice, Contact, and Item support
+  - `ValidationExceptionElementObject::Invoice` with invoice_id, invoice_number
+  - `ValidationExceptionElementObject::Contact` with contact_id, name
+  - `ValidationExceptionElementObject::Item` with item_id, code
+  - Previously these fell through to `Unknown` variant
+
+### Changed
+- **RateLimitExceeded error**: Now includes `limit_type` field
+  - Identifies which specific rate limit was hit
+  - Better error messages with limit type in display output
+
+### Fixed
+- **DELETE method rate limiting**: Fixed retry logic for DELETE requests on 429
+- **Rate limit info persistence**: Rate limit headers now properly update client state
+
 ## [0.2.0-alpha.4] - 2025-11-20
 
 ### Breaking Changes

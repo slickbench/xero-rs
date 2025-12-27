@@ -8,6 +8,50 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
 
+/// The type of rate limit that was exceeded.
+///
+/// Xero enforces multiple rate limits:
+/// - **Minute limit**: 60 calls per minute per tenant
+/// - **Daily limit**: 5000 calls per day per tenant
+/// - **App minute limit**: 10,000 calls per minute across all tenants
+///
+/// This enum is populated from the `X-Rate-Limit-Problem` response header.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RateLimitType {
+    /// Per-tenant minute limit exceeded (60 calls/minute)
+    Minute,
+    /// Per-tenant daily limit exceeded (5000 calls/day)
+    Daily,
+    /// App-wide minute limit exceeded (10,000 calls/minute across all tenants)
+    AppMinute,
+    /// Unknown or unrecognized limit type
+    Unknown(String),
+}
+
+impl RateLimitType {
+    /// Parse the rate limit type from the `X-Rate-Limit-Problem` header value.
+    #[must_use]
+    pub fn from_header(value: &str) -> Self {
+        match value.to_lowercase().as_str() {
+            "minute" => Self::Minute,
+            "daily" => Self::Daily,
+            "appminute" => Self::AppMinute,
+            other => Self::Unknown(other.to_string()),
+        }
+    }
+}
+
+impl fmt::Display for RateLimitType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Minute => write!(f, "minute (60 calls/min per tenant)"),
+            Self::Daily => write!(f, "daily (5000 calls/day per tenant)"),
+            Self::AppMinute => write!(f, "app minute (10000 calls/min across all tenants)"),
+            Self::Unknown(s) => write!(f, "unknown ({s})"),
+        }
+    }
+}
+
 /// OAuth2 error response from Xero's identity server.
 ///
 /// This captures both standard OAuth2 error responses (RFC 6749 Section 5.2)
@@ -124,6 +168,9 @@ pub struct ValidationError {
 /// since the API doesn't include a "Type" discriminator field.
 ///
 /// # Entity Variants
+/// - `Invoice`: Contains invoice ID and optional invoice number
+/// - `Contact`: Contains contact ID
+/// - `Item`: Contains item ID and optional code
 /// - `PurchaseOrder`: Contains purchase order ID
 /// - `Quote`: Contains quote ID and optional status
 /// - `Unknown`: Fallback for unsupported entity types, preserves raw data
@@ -139,10 +186,37 @@ pub struct ValidationError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ValidationExceptionElementObject {
+    /// Invoice validation error with invoice identification
+    Invoice {
+        #[serde(rename = "InvoiceID")]
+        invoice_id: Uuid,
+        #[serde(rename = "InvoiceNumber")]
+        invoice_number: Option<String>,
+        #[serde(rename = "Type")]
+        invoice_type: Option<String>,
+        #[serde(rename = "Status")]
+        status: Option<String>,
+    },
+    /// Contact validation error with contact identification
+    Contact {
+        #[serde(rename = "ContactID")]
+        contact_id: Uuid,
+        #[serde(rename = "Name")]
+        name: Option<String>,
+    },
+    /// Item validation error with item identification
+    Item {
+        #[serde(rename = "ItemID")]
+        item_id: Uuid,
+        #[serde(rename = "Code")]
+        code: Option<String>,
+    },
+    /// Purchase order validation error
     PurchaseOrder {
         #[serde(rename = "PurchaseOrderID")]
         purchase_order_id: Uuid,
     },
+    /// Quote validation error
     Quote {
         #[serde(rename = "QuoteID")]
         quote_id: Uuid,
@@ -356,7 +430,12 @@ pub enum Error {
     OAuth2(oauth2::RequestTokenError<HttpClientError<reqwest::Error>, OAuth2ErrorResponse>),
 
     /// Rate limit exceeded (HTTP 429 Too Many Requests)
-    #[error("rate limit exceeded: retry after {retry_after:?}")]
+    ///
+    /// The `limit_type` field identifies which rate limit was exceeded:
+    /// - `Minute`: 60 calls per minute per tenant
+    /// - `Daily`: 5000 calls per day per tenant
+    /// - `AppMinute`: 10,000 calls per minute across all tenants
+    #[error("rate limit exceeded ({limit_type}): retry after {retry_after:?}")]
     #[diagnostic(
         code(xero_rs::rate_limit_exceeded),
         help(
@@ -364,6 +443,9 @@ pub enum Error {
         )
     )]
     RateLimitExceeded {
+        /// The type of rate limit that was exceeded
+        limit_type: RateLimitType,
+        /// How long to wait before retrying (from Retry-After header)
         retry_after: Option<Duration>,
         status_code: reqwest::StatusCode,
         url: String,

@@ -16,7 +16,7 @@ pub mod utils;
 pub use client::Client;
 pub use endpoints::XeroEndpoint;
 pub use entities::*;
-pub use error::Error;
+pub use error::{Error, RateLimitType};
 pub use oauth::KeyPair;
 pub use scope::{Permission, Scope, ScopeCategory, ScopeType};
 

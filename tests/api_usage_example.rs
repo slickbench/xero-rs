@@ -5,7 +5,6 @@ mod test_utils;
 
 use anyhow::Result;
 use std::env;
-use uuid::Uuid;
 use xero_rs::KeyPair;
 
 #[tokio::test]
@@ -15,22 +14,27 @@ async fn test_method_based_api() -> Result<()> {
     // Get credentials from environment
     let client_id = env::var("XERO_CLIENT_ID").expect("XERO_CLIENT_ID must be set");
     let client_secret = env::var("XERO_CLIENT_SECRET").expect("XERO_CLIENT_SECRET must be set");
-    let tenant_id =
-        Uuid::parse_str(&env::var("XERO_TENANT_ID").expect("XERO_TENANT_ID must be set"))
-            .expect("Invalid XERO_TENANT_ID format");
 
     // Create client with credentials and scopes
+    // Use None to get default scopes configured in the Xero app
     let client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id, Some(client_secret)),
-        xero_rs::scopes![
-            xero_rs::ScopeType::AccountingContacts(xero_rs::Permission::ReadOnly),
-            xero_rs::ScopeType::AccountingTransactions(xero_rs::Permission::ReadOnly)
-        ],
+        None,
     )
     .await?;
 
-    // Set the tenant ID
-    client.set_tenant(Some(tenant_id)).await;
+    // Discover tenants and use the first one
+    let connections = xero_rs::connection::list(&client).await?;
+    info!("Found {} connected tenants", connections.len());
+
+    let tenant = connections
+        .first()
+        .expect("No tenants connected to this app");
+    info!(
+        "Using tenant: {} ({})",
+        tenant.tenant_name, tenant.tenant_id
+    );
+    client.set_tenant(Some(tenant.tenant_id)).await;
 
     // Use the new method-based API
     info!("=== Using method-based API ===");
