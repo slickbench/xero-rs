@@ -80,7 +80,7 @@ async fn get_account() -> Result<()> {
         let account_id = accounts[0].account_id;
         let account = client.accounts().get(account_id).await?;
         info!(
-            "Got account: {} - {} ({:?})",
+            "Got account: {:?} - {} ({:?})",
             account.code, account.name, account.account_type
         );
         assert_eq!(account.account_id, account_id);
@@ -110,7 +110,7 @@ async fn filter_accounts_by_type() -> Result<()> {
     for account in &revenue_accounts {
         assert_eq!(
             account.account_type,
-            AccountType::Revenue,
+            Some(AccountType::Revenue),
             "Expected Revenue type"
         );
     }
@@ -176,7 +176,7 @@ async fn create_update_account() -> Result<()> {
     let created_account = match client.accounts().create(&builder).await {
         Ok(account) => {
             info!(
-                "Created account: {} - {} (ID: {})",
+                "Created account: {:?} - {} (ID: {})",
                 account.code, account.name, account.account_id
             );
             account
@@ -187,7 +187,7 @@ async fn create_update_account() -> Result<()> {
         }
     };
 
-    assert_eq!(created_account.code, account_code);
+    assert_eq!(created_account.code, Some(account_code.clone()));
     assert_eq!(created_account.name, "Test Expense Account");
 
     // Update the account
@@ -201,7 +201,7 @@ async fn create_update_account() -> Result<()> {
     {
         Ok(updated_account) => {
             info!(
-                "Updated account: {} - {}",
+                "Updated account: {:?} - {}",
                 updated_account.code, updated_account.name
             );
             assert_eq!(updated_account.name, "Updated Test Account");
@@ -221,7 +221,7 @@ async fn create_update_account() -> Result<()> {
         .await
     {
         Ok(archived_account) => {
-            info!("Archived account: {}", archived_account.code);
+            info!("Archived account: {:?}", archived_account.code);
             assert_eq!(archived_account.status, Some(AccountStatus::Archived));
         }
         Err(e) => {

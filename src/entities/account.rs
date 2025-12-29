@@ -84,14 +84,17 @@ pub struct Account {
     pub account_id: Uuid,
 
     /// Customer defined alpha numeric account code (max 10 chars)
-    pub code: String,
+    /// Note: System accounts may not have a code
+    #[serde(default)]
+    pub code: Option<String>,
 
     /// Name of the account (max 150 chars)
+    #[serde(default)]
     pub name: String,
 
     /// Account type
-    #[serde(rename = "Type")]
-    pub account_type: AccountType,
+    #[serde(rename = "Type", default)]
+    pub account_type: Option<AccountType>,
 
     /// Account status
     #[serde(skip_serializing_if = "Option::is_none")]
