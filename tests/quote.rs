@@ -135,6 +135,7 @@ async fn create_update_quote() -> Result<()> {
         currency_code: Some("USD".to_string()),
         branding_theme_id: None,
         quote_id: None,
+        quote_number: None,
         status: Some(Status::Draft),
     };
 
@@ -164,6 +165,7 @@ async fn create_update_quote() -> Result<()> {
         currency_code: Some("USD".to_string()),
         branding_theme_id: None,
         quote_id: None,
+        quote_number: None,
         status: Some(Status::Draft),
     };
 
@@ -421,6 +423,7 @@ async fn create_quote_with_line_items() -> Result<()> {
         currency_code: None,
         branding_theme_id: None,
         quote_id: None,
+        quote_number: None,
         status: Some(Status::Draft),
     };
 
@@ -501,6 +504,7 @@ async fn update_quote_line_items() -> Result<()> {
         currency_code: None,
         branding_theme_id: None,
         quote_id: None,
+        quote_number: None,
         status: Some(Status::Draft),
     };
 
@@ -551,6 +555,7 @@ async fn update_quote_line_items() -> Result<()> {
         currency_code: None,
         branding_theme_id: None,
         quote_id: None,
+        quote_number: None,
         status: Some(Status::Draft),
     };
 
@@ -639,6 +644,7 @@ async fn quote_status_transitions() -> Result<()> {
         currency_code: None,
         branding_theme_id: None,
         quote_id: None,
+        quote_number: None,
         status: Some(Status::Draft),
     };
 
@@ -671,6 +677,7 @@ async fn quote_status_transitions() -> Result<()> {
         currency_code: None,
         branding_theme_id: None,
         quote_id: None,
+        quote_number: None,
         status: Some(Status::Sent),
     };
 
@@ -754,6 +761,113 @@ async fn list_quotes_with_filters() -> Result<()> {
     match client.quotes().list(ordered_params).await {
         Ok(quotes) => info!("Found {} quotes ordered by date DESC", quotes.len()),
         Err(e) => info!("Could not order quotes: {}", e),
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn update_quote_number_prefix() -> Result<()> {
+    let client = match try_setup_client().await {
+        Some(client) => client,
+        None => {
+            info!("Skipping test: Required environment variables not set");
+            return Ok(());
+        }
+    };
+
+    // Get a contact
+    let contacts = match client.contacts().list().await {
+        Ok(contacts) => contacts,
+        Err(e) => {
+            info!("Skipping test: Could not retrieve contacts: {}", e);
+            return Ok(());
+        }
+    };
+
+    if contacts.is_empty() {
+        info!("No contacts found, skipping test");
+        return Ok(());
+    }
+
+    let contact_id = contacts[0].contact_id;
+
+    // Create a draft quote with a line item
+    let line_item = xero_rs::line_item::Builder {
+        description: Some("Quote Number Test Service".to_string()),
+        quantity: Some(Decimal::new(100, 2)),
+        unit_amount: Some(Decimal::new(10000, 2)),
+        account_code: Some("200".to_string()),
+        ..Default::default()
+    };
+
+    let quote_builder = QuoteBuilder {
+        contact: ContactIdentifier::ID(contact_id),
+        date: date!(2024 - 01 - 15),
+        expiry_date: Some(date!(2024 - 02 - 15)),
+        line_items: vec![line_item.clone()],
+        line_amount_types: LineAmountType::Exclusive,
+        title: Some("Quote Number Prefix Test".to_string()),
+        summary: None,
+        terms: None,
+        reference: Some("QUOTE-NUMBER-TEST".to_string()),
+        currency_code: None,
+        branding_theme_id: None,
+        quote_id: None,
+        quote_number: None,
+        status: Some(Status::Draft),
+    };
+
+    let created_quote = match client.quotes().create(&quote_builder).await {
+        Ok(quote) => {
+            info!("Created quote with number: {}", quote.quote_number);
+            quote
+        }
+        Err(e) => {
+            info!("Could not create quote: {}", e);
+            return Ok(());
+        }
+    };
+
+    // Update the quote with a new quote number prefix (e.g., QU-0001 -> F-QU-0001)
+    let original_number = &created_quote.quote_number;
+    let new_quote_number = format!("F-{}", original_number);
+
+    let update_builder = QuoteBuilder {
+        contact: ContactIdentifier::ID(contact_id),
+        date: date!(2024 - 01 - 15),
+        expiry_date: Some(date!(2024 - 02 - 15)),
+        line_items: vec![line_item],
+        line_amount_types: LineAmountType::Exclusive,
+        title: Some("Quote Number Prefix Test".to_string()),
+        summary: None,
+        terms: None,
+        reference: Some("QUOTE-NUMBER-TEST".to_string()),
+        currency_code: None,
+        branding_theme_id: None,
+        quote_id: None,
+        quote_number: Some(new_quote_number.clone()),
+        status: Some(Status::Draft),
+    };
+
+    match client
+        .quotes()
+        .update(created_quote.quote_id, &update_builder)
+        .await
+    {
+        Ok(updated_quote) => {
+            info!(
+                "Updated quote number from {} to {}",
+                original_number, updated_quote.quote_number
+            );
+            assert_eq!(
+                updated_quote.quote_number, new_quote_number,
+                "Quote number should be updated to new prefix"
+            );
+        }
+        Err(e) => {
+            info!("Could not update quote number: {}", e);
+        }
     }
 
     Ok(())

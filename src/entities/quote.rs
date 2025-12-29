@@ -265,6 +265,10 @@ pub struct QuoteBuilder {
     #[serde(rename = "QuoteID", skip_serializing_if = "Option::is_none")]
     pub quote_id: Option<Uuid>,
 
+    /// The quote's number (e.g., "QU-0001")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quote_number: Option<String>,
+
     /// The quote's status
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<Status>,
