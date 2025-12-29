@@ -7,7 +7,7 @@ use crate::{
     endpoints::XeroEndpoint,
     entities::{EntityEndpoint, MutationResponse, endpoint_utils},
     error::{Error, Result},
-    utils::date_format::xero_datetime_format,
+    utils::{date_format::xero_datetime_format, serde_helpers::empty_string_as_none},
 };
 
 pub const ENDPOINT: &str = "https://api.xero.com/api.xro/2.0/Accounts/";
@@ -128,8 +128,12 @@ pub struct Account {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bank_account_number: Option<String>,
 
-    /// Bank account type (for BANK type accounts)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Bank account type (for BANK type accounts only - non-bank accounts return "")
+    #[serde(
+        default,
+        deserialize_with = "empty_string_as_none",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub bank_account_type: Option<BankAccountType>,
 
     /// Currency code for the account
