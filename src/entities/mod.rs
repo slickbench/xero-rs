@@ -2,10 +2,11 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use self::{
-    contact::Contact, invoice::Invoice, item::Item, purchase_order::PurchaseOrder, quote::Quote,
-    timesheet::Timesheet,
+    account::Account, contact::Contact, invoice::Invoice, item::Item,
+    purchase_order::PurchaseOrder, quote::Quote, timesheet::Timesheet,
 };
 
+pub mod account;
 pub mod connection;
 pub mod contact;
 pub mod invoice;
@@ -18,6 +19,7 @@ pub mod timesheet;
 #[derive(Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum Data {
+    Accounts(Vec<Account>),
     PurchaseOrders(Vec<PurchaseOrder>),
     Invoices(Vec<Invoice>),
     Contacts(Vec<Contact>),
@@ -27,6 +29,15 @@ pub enum Data {
 }
 
 impl Data {
+    #[must_use]
+    pub fn get_accounts(self) -> Option<Vec<Account>> {
+        if let Self::Accounts(accounts) = self {
+            Some(accounts)
+        } else {
+            None
+        }
+    }
+
     #[must_use]
     pub fn get_purchase_orders(self) -> Option<Vec<PurchaseOrder>> {
         if let Self::PurchaseOrders(purchase_orders) = self {

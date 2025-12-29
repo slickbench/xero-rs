@@ -13,6 +13,8 @@ pub const BASE_URL: &str = "https://api.xero.com/api.xro/2.0/";
 #[derive(Debug, Clone)]
 pub enum XeroEndpoint {
     // Accounting endpoints
+    Accounts,
+    Account(Uuid),
     Contacts,
     Contact(Uuid),
     Invoices,
@@ -38,6 +40,12 @@ impl XeroEndpoint {
         let base = Url::parse(BASE_URL).map_err(|_| Error::InvalidEndpoint)?;
 
         let path = match self {
+            Self::Accounts => "Accounts",
+            Self::Account(id) => {
+                return base
+                    .join(&format!("Accounts/{id}"))
+                    .map_err(|_| Error::InvalidEndpoint);
+            }
             Self::Contacts => "Contacts",
             Self::Contact(id) => {
                 return base

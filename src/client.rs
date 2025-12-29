@@ -17,6 +17,7 @@ use uuid::Uuid;
 use crate::endpoints::{BASE_URL, XeroEndpoint};
 use crate::entities::{
     MutationResponse,
+    account::{self, Account},
     contact::{self, Contact},
     invoice::{self, Invoice},
     item::{self, Item},
@@ -1260,6 +1261,12 @@ impl Client {
         }
     }
 
+    /// Access the accounts API (chart of accounts)
+    #[must_use]
+    pub fn accounts(&self) -> AccountsApi<'_> {
+        AccountsApi { client: self }
+    }
+
     /// Access the contacts API
     #[must_use]
     pub fn contacts(&self) -> ContactsApi<'_> {
@@ -1312,6 +1319,73 @@ impl Client {
     #[must_use]
     pub fn items(&self) -> ItemsApi<'_> {
         ItemsApi { client: self }
+    }
+}
+
+/// API handler for Accounts (Chart of Accounts) endpoints
+#[derive(Debug)]
+pub struct AccountsApi<'a> {
+    client: &'a Client,
+}
+
+impl AccountsApi<'_> {
+    /// Retrieve a list of accounts with optional filtering
+    #[instrument(skip(self, parameters))]
+    pub async fn list(&self, parameters: account::ListParameters) -> Result<Vec<Account>> {
+        account::list(self.client, parameters).await
+    }
+
+    /// List all accounts without any filtering
+    #[instrument(skip(self))]
+    pub async fn list_all(&self) -> Result<Vec<Account>> {
+        account::list_all(self.client).await
+    }
+
+    /// Retrieve a single account by ID
+    #[instrument(skip(self))]
+    pub async fn get(&self, account_id: Uuid) -> Result<Account> {
+        account::get(self.client, account_id).await
+    }
+
+    /// Create a new account
+    #[instrument(skip(self, account))]
+    pub async fn create(&self, account: &account::Builder) -> Result<Account> {
+        account::create(self.client, account).await
+    }
+
+    /// Update an existing account
+    #[instrument(skip(self, account))]
+    pub async fn update(&self, account_id: Uuid, account: &account::Builder) -> Result<Account> {
+        account::update(self.client, account_id, account).await
+    }
+
+    /// Delete an account
+    #[instrument(skip(self))]
+    pub async fn delete(&self, account_id: Uuid) -> Result<()> {
+        account::delete(self.client, account_id).await
+    }
+
+    /// List all attachments for an account
+    #[instrument(skip(self))]
+    pub async fn list_attachments(&self, account_id: Uuid) -> Result<Vec<account::Attachment>> {
+        account::list_attachments(self.client, account_id).await
+    }
+
+    /// Get a specific attachment by ID
+    #[instrument(skip(self))]
+    pub async fn get_attachment(&self, account_id: Uuid, attachment_id: Uuid) -> Result<Vec<u8>> {
+        account::get_attachment(self.client, account_id, attachment_id).await
+    }
+
+    /// Upload an attachment to an account
+    #[instrument(skip(self, attachment_content))]
+    pub async fn upload_attachment(
+        &self,
+        account_id: Uuid,
+        filename: &str,
+        attachment_content: &[u8],
+    ) -> Result<account::Attachment> {
+        account::upload_attachment(self.client, account_id, filename, attachment_content).await
     }
 }
 

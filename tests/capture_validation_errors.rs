@@ -67,6 +67,7 @@ async fn capture_quote_validation_error_missing_contact() -> Result<()> {
         currency_code: None,
         branding_theme_id: None,
         quote_id: None,
+        quote_number: None,
         status: Some(Status::Draft),
     };
 
@@ -90,6 +91,7 @@ async fn capture_quote_validation_error_missing_contact() -> Result<()> {
             currency_code: None,
             branding_theme_id: None,
             quote_id: Some(created_quote.quote_id),
+            quote_number: None,
             status: Some(Status::Draft),
         };
 
@@ -176,6 +178,7 @@ async fn capture_quote_validation_multiple_errors() -> Result<()> {
         currency_code: None,
         branding_theme_id: None,
         quote_id: None,
+        quote_number: None,
         status: None,
     };
 

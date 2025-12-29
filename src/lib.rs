@@ -23,5 +23,8 @@ pub use scope::{Permission, Scope, ScopeCategory, ScopeType};
 // Re-export LineAmountType
 pub use entities::line_item::LineAmountType as line_amount_types;
 
+// Re-export Account types for convenience
+pub use entities::account::{Account, AccountClass, AccountStatus, AccountType, BankAccountType};
+
 // Re-export Item types for convenience
 pub use entities::item::{Item, PurchaseDetails, SalesDetails};
