@@ -72,7 +72,6 @@ pub enum BankAccountType {
     CreditCard,
     #[serde(rename = "PAYPAL")]
     PayPal,
-    None,
 }
 
 /// Represents an account in the chart of accounts
