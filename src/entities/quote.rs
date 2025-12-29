@@ -11,7 +11,7 @@ use crate::{
     endpoints::XeroEndpoint,
     entities::{EntityEndpoint, MutationResponse, endpoint_utils},
     error::{Error, Result},
-    line_item::{LineAmountType, LineItem},
+    line_item::{self, LineAmountType, LineItem},
     utils::date_format::{xero_date_format, xero_date_format_option},
 };
 
@@ -232,7 +232,7 @@ pub struct QuoteBuilder {
     pub expiry_date: Option<Date>,
 
     /// Line items for the quote
-    pub line_items: Vec<LineItem>,
+    pub line_items: Vec<line_item::Builder>,
 
     /// Tax calculation type
     pub line_amount_types: LineAmountType,

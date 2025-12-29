@@ -4,6 +4,7 @@ extern crate tracing;
 mod test_utils;
 
 use anyhow::Result;
+use rust_decimal::Decimal;
 use std::env;
 use std::fs;
 use time::macros::date;
@@ -351,6 +352,408 @@ async fn quote_attachments() -> Result<()> {
         }
     } else {
         info!("No quotes found to test attachment functionality");
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn create_quote_with_line_items() -> Result<()> {
+    let client = match try_setup_client().await {
+        Some(client) => client,
+        None => {
+            info!("Skipping test: Required environment variables not set");
+            return Ok(());
+        }
+    };
+
+    // Get a contact to use
+    let contacts = match client.contacts().list().await {
+        Ok(contacts) => contacts,
+        Err(e) => {
+            info!("Skipping test: Could not retrieve contacts: {}", e);
+            return Ok(());
+        }
+    };
+
+    if contacts.is_empty() {
+        info!("No contacts found, skipping quote creation test");
+        return Ok(());
+    }
+
+    let contact_id = contacts[0].contact_id;
+
+    // Create line items
+    let line_item_1 = xero_rs::line_item::Builder {
+        description: Some("Consulting Services".to_string()),
+        quantity: Some(Decimal::new(500, 2)),      // 5.00 hours
+        unit_amount: Some(Decimal::new(15000, 2)), // $150.00/hour
+        account_code: Some("200".to_string()),
+        ..Default::default()
+    };
+
+    let line_item_2 = xero_rs::line_item::Builder {
+        description: Some("Software License".to_string()),
+        quantity: Some(Decimal::new(100, 2)),      // 1.00
+        unit_amount: Some(Decimal::new(50000, 2)), // $500.00
+        account_code: Some("200".to_string()),
+        ..Default::default()
+    };
+
+    let line_item_3 = xero_rs::line_item::Builder {
+        description: Some("Support Package".to_string()),
+        quantity: Some(Decimal::new(100, 2)),      // 1.00
+        unit_amount: Some(Decimal::new(25000, 2)), // $250.00
+        account_code: Some("200".to_string()),
+        ..Default::default()
+    };
+
+    let quote_builder = QuoteBuilder {
+        contact: ContactIdentifier::ID(contact_id),
+        date: date!(2024 - 01 - 15),
+        expiry_date: Some(date!(2024 - 02 - 15)),
+        line_items: vec![line_item_1, line_item_2, line_item_3],
+        line_amount_types: LineAmountType::Exclusive,
+        title: Some("Project Proposal".to_string()),
+        summary: Some("Comprehensive project services quote".to_string()),
+        terms: Some("Net 30".to_string()),
+        reference: Some("QUOTE-LINE-ITEMS-TEST".to_string()),
+        currency_code: None,
+        branding_theme_id: None,
+        quote_id: None,
+        status: Some(Status::Draft),
+    };
+
+    match client.quotes().create(&quote_builder).await {
+        Ok(quote) => {
+            info!(
+                "Created quote {} with {} line items",
+                quote.quote_id,
+                quote.line_items.len()
+            );
+            assert_eq!(quote.line_items.len(), 3, "Expected 3 line items");
+
+            // Verify totals are calculated (5*150 + 1*500 + 1*250 = 1500)
+            let expected_subtotal = Decimal::new(150000, 2); // $1500.00
+            assert_eq!(
+                quote.sub_total, expected_subtotal,
+                "Subtotal should be $1500.00"
+            );
+
+            info!(
+                "Quote totals - SubTotal: {}, Tax: {}, Total: {}",
+                quote.sub_total, quote.total_tax, quote.total
+            );
+        }
+        Err(e) => {
+            info!("Could not create quote with line items: {}", e);
+        }
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn update_quote_line_items() -> Result<()> {
+    let client = match try_setup_client().await {
+        Some(client) => client,
+        None => {
+            info!("Skipping test: Required environment variables not set");
+            return Ok(());
+        }
+    };
+
+    // Get a contact
+    let contacts = match client.contacts().list().await {
+        Ok(contacts) => contacts,
+        Err(e) => {
+            info!("Skipping test: Could not retrieve contacts: {}", e);
+            return Ok(());
+        }
+    };
+
+    if contacts.is_empty() {
+        info!("No contacts found, skipping test");
+        return Ok(());
+    }
+
+    let contact_id = contacts[0].contact_id;
+
+    // Create initial quote with one line item
+    let initial_line_item = xero_rs::line_item::Builder {
+        description: Some("Initial Service".to_string()),
+        quantity: Some(Decimal::new(100, 2)),      // 1.00
+        unit_amount: Some(Decimal::new(10000, 2)), // $100.00
+        account_code: Some("200".to_string()),
+        ..Default::default()
+    };
+
+    let quote_builder = QuoteBuilder {
+        contact: ContactIdentifier::ID(contact_id),
+        date: date!(2024 - 01 - 15),
+        expiry_date: Some(date!(2024 - 02 - 15)),
+        line_items: vec![initial_line_item],
+        line_amount_types: LineAmountType::Exclusive,
+        title: Some("Quote for Update Test".to_string()),
+        summary: None,
+        terms: None,
+        reference: Some("QUOTE-UPDATE-LINE-ITEMS".to_string()),
+        currency_code: None,
+        branding_theme_id: None,
+        quote_id: None,
+        status: Some(Status::Draft),
+    };
+
+    let created_quote = match client.quotes().create(&quote_builder).await {
+        Ok(quote) => {
+            info!(
+                "Created quote {} with {} line item(s)",
+                quote.quote_id,
+                quote.line_items.len()
+            );
+            quote
+        }
+        Err(e) => {
+            info!("Could not create quote: {}", e);
+            return Ok(());
+        }
+    };
+
+    assert_eq!(created_quote.line_items.len(), 1);
+
+    // Update: Replace with two new line items (removing original, adding new)
+    let new_line_item_1 = xero_rs::line_item::Builder {
+        description: Some("Updated Service A".to_string()),
+        quantity: Some(Decimal::new(200, 2)),     // 2.00
+        unit_amount: Some(Decimal::new(7500, 2)), // $75.00
+        account_code: Some("200".to_string()),
+        ..Default::default()
+    };
+
+    let new_line_item_2 = xero_rs::line_item::Builder {
+        description: Some("Updated Service B".to_string()),
+        quantity: Some(Decimal::new(300, 2)),     // 3.00
+        unit_amount: Some(Decimal::new(5000, 2)), // $50.00
+        account_code: Some("200".to_string()),
+        ..Default::default()
+    };
+
+    let update_builder = QuoteBuilder {
+        contact: ContactIdentifier::ID(contact_id),
+        date: date!(2024 - 01 - 15),
+        expiry_date: Some(date!(2024 - 02 - 28)), // Extended expiry
+        line_items: vec![new_line_item_1, new_line_item_2],
+        line_amount_types: LineAmountType::Exclusive,
+        title: Some("Quote for Update Test - Revised".to_string()),
+        summary: Some("Updated with new line items".to_string()),
+        terms: None,
+        reference: Some("QUOTE-UPDATE-LINE-ITEMS-REV".to_string()),
+        currency_code: None,
+        branding_theme_id: None,
+        quote_id: None,
+        status: Some(Status::Draft),
+    };
+
+    match client
+        .quotes()
+        .update(created_quote.quote_id, &update_builder)
+        .await
+    {
+        Ok(updated_quote) => {
+            info!(
+                "Updated quote {} now has {} line items",
+                updated_quote.quote_id,
+                updated_quote.line_items.len()
+            );
+            assert_eq!(
+                updated_quote.line_items.len(),
+                2,
+                "Expected 2 line items after update"
+            );
+
+            // Verify new subtotal (2*75 + 3*50 = 300)
+            let expected_subtotal = Decimal::new(30000, 2); // $300.00
+            assert_eq!(
+                updated_quote.sub_total, expected_subtotal,
+                "Subtotal should be $300.00"
+            );
+
+            info!(
+                "Updated quote totals - SubTotal: {}, Total: {}",
+                updated_quote.sub_total, updated_quote.total
+            );
+        }
+        Err(e) => {
+            info!("Could not update quote line items: {}", e);
+        }
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn quote_status_transitions() -> Result<()> {
+    let client = match try_setup_client().await {
+        Some(client) => client,
+        None => {
+            info!("Skipping test: Required environment variables not set");
+            return Ok(());
+        }
+    };
+
+    // Get a contact
+    let contacts = match client.contacts().list().await {
+        Ok(contacts) => contacts,
+        Err(e) => {
+            info!("Skipping test: Could not retrieve contacts: {}", e);
+            return Ok(());
+        }
+    };
+
+    if contacts.is_empty() {
+        info!("No contacts found, skipping test");
+        return Ok(());
+    }
+
+    let contact_id = contacts[0].contact_id;
+
+    // Create a draft quote with at least one line item (required for status transitions)
+    let line_item = xero_rs::line_item::Builder {
+        description: Some("Status Test Service".to_string()),
+        quantity: Some(Decimal::new(100, 2)),
+        unit_amount: Some(Decimal::new(10000, 2)),
+        account_code: Some("200".to_string()),
+        ..Default::default()
+    };
+
+    let quote_builder = QuoteBuilder {
+        contact: ContactIdentifier::ID(contact_id),
+        date: date!(2024 - 01 - 15),
+        expiry_date: Some(date!(2024 - 02 - 15)),
+        line_items: vec![line_item.clone()],
+        line_amount_types: LineAmountType::Exclusive,
+        title: Some("Status Transition Test".to_string()),
+        summary: None,
+        terms: None,
+        reference: Some("QUOTE-STATUS-TEST".to_string()),
+        currency_code: None,
+        branding_theme_id: None,
+        quote_id: None,
+        status: Some(Status::Draft),
+    };
+
+    let created_quote = match client.quotes().create(&quote_builder).await {
+        Ok(quote) => {
+            info!("Created draft quote: {}", quote.quote_id);
+            assert!(
+                matches!(quote.status, Status::Draft),
+                "Quote should be in Draft status"
+            );
+            quote
+        }
+        Err(e) => {
+            info!("Could not create quote: {}", e);
+            return Ok(());
+        }
+    };
+
+    // Transition Draft -> Sent
+    let sent_builder = QuoteBuilder {
+        contact: ContactIdentifier::ID(contact_id),
+        date: date!(2024 - 01 - 15),
+        expiry_date: Some(date!(2024 - 02 - 15)),
+        line_items: vec![line_item],
+        line_amount_types: LineAmountType::Exclusive,
+        title: Some("Status Transition Test".to_string()),
+        summary: None,
+        terms: None,
+        reference: Some("QUOTE-STATUS-TEST".to_string()),
+        currency_code: None,
+        branding_theme_id: None,
+        quote_id: None,
+        status: Some(Status::Sent),
+    };
+
+    match client
+        .quotes()
+        .update(created_quote.quote_id, &sent_builder)
+        .await
+    {
+        Ok(sent_quote) => {
+            info!("Transitioned quote {} to Sent status", sent_quote.quote_id);
+            assert!(
+                matches!(sent_quote.status, Status::Sent),
+                "Quote should now be in Sent status"
+            );
+        }
+        Err(e) => {
+            info!("Could not transition quote to Sent: {}", e);
+        }
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn list_quotes_with_filters() -> Result<()> {
+    let client = match try_setup_client().await {
+        Some(client) => client,
+        None => {
+            info!("Skipping test: Required environment variables not set");
+            return Ok(());
+        }
+    };
+
+    // Test status filter
+    let draft_params = ListParameters::builder().with_status(Status::Draft);
+    match client.quotes().list(draft_params).await {
+        Ok(drafts) => info!("Found {} draft quotes", drafts.len()),
+        Err(e) => info!("Could not filter by draft status: {}", e),
+    }
+
+    let sent_params = ListParameters::builder().with_status(Status::Sent);
+    match client.quotes().list(sent_params).await {
+        Ok(sent) => info!("Found {} sent quotes", sent.len()),
+        Err(e) => info!("Could not filter by sent status: {}", e),
+    }
+
+    // Test date range filter
+    let date_params = ListParameters::builder()
+        .with_date_from(date!(2024 - 01 - 01))
+        .with_date_to(date!(2024 - 12 - 31));
+    match client.quotes().list(date_params).await {
+        Ok(quotes) => info!("Found {} quotes in 2024 date range", quotes.len()),
+        Err(e) => info!("Could not filter by date range: {}", e),
+    }
+
+    // Test expiry date filter
+    let expiry_params = ListParameters::builder()
+        .with_expiry_date_from(date!(2024 - 01 - 01))
+        .with_expiry_date_to(date!(2024 - 12 - 31));
+    match client.quotes().list(expiry_params).await {
+        Ok(quotes) => info!("Found {} quotes with 2024 expiry dates", quotes.len()),
+        Err(e) => info!("Could not filter by expiry date range: {}", e),
+    }
+
+    // Test contact filter (if we have quotes and contacts)
+    let contacts = client.contacts().list().await.unwrap_or_default();
+    if !contacts.is_empty() {
+        let contact_params = ListParameters::builder().with_contact_id(contacts[0].contact_id);
+        match client.quotes().list(contact_params).await {
+            Ok(quotes) => info!(
+                "Found {} quotes for contact {}",
+                quotes.len(),
+                contacts[0].contact_id
+            ),
+            Err(e) => info!("Could not filter by contact: {}", e),
+        }
+    }
+
+    // Test ordering
+    let ordered_params = ListParameters::builder().with_order("Date DESC");
+    match client.quotes().list(ordered_params).await {
+        Ok(quotes) => info!("Found {} quotes ordered by date DESC", quotes.len()),
+        Err(e) => info!("Could not order quotes: {}", e),
     }
 
     Ok(())
