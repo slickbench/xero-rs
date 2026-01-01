@@ -354,6 +354,35 @@ pub struct TimesheetValidationError {
     pub timesheet_lines: Vec<serde_json::Value>,
 }
 
+/// Format an OAuth2 error with detailed information, including raw response body for Parse errors.
+fn format_oauth2_error(
+    error: &oauth2::RequestTokenError<HttpClientError<reqwest::Error>, OAuth2ErrorResponse>,
+) -> String {
+    use oauth2::RequestTokenError;
+
+    match error {
+        RequestTokenError::ServerResponse(resp) => {
+            format!("OAuth2 server error: {resp}")
+        }
+        RequestTokenError::Request(req_err) => {
+            format!("OAuth2 request failed: {req_err:?}")
+        }
+        RequestTokenError::Parse(serde_err, raw_body) => {
+            let body_str = String::from_utf8_lossy(raw_body);
+            // Truncate very long responses
+            let truncated = if body_str.len() > 500 {
+                format!("{}... (truncated)", &body_str[..500])
+            } else {
+                body_str.to_string()
+            };
+            format!("OAuth2 token response parse error: {serde_err} - raw response: {truncated}")
+        }
+        RequestTokenError::Other(msg) => {
+            format!("OAuth2 error: {msg}")
+        }
+    }
+}
+
 /// Errors that can occur when interacting with the Xero API.
 #[derive(Debug, Error, Diagnostic)]
 pub enum Error {
@@ -422,7 +451,7 @@ pub enum Error {
     Forbidden(Box<ForbiddenResponse>),
 
     /// An error returned during `OAuth2` operations
-    #[error("oauth2 error: {0:?}")]
+    #[error("{}", format_oauth2_error(.0))]
     #[diagnostic(
         code(xero_rs::oauth2_error),
         help("Verify your OAuth2 configuration and credentials")
