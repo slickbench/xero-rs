@@ -1,6 +1,8 @@
 use serde::Deserialize;
 use uuid::Uuid;
 
+use super::leave_types::LeaveType;
+
 pub const ENDPOINT: &str = "https://api.xero.com/payroll.xro/1.0/PayItems";
 
 #[derive(Clone, Debug, Deserialize)]
@@ -32,6 +34,8 @@ pub struct EarningsRate {
 #[serde(rename_all = "PascalCase")]
 pub struct PayItems {
     pub earnings_rates: Vec<EarningsRate>,
+    #[serde(default)]
+    pub leave_types: Vec<LeaveType>,
 }
 
 #[derive(Deserialize)]

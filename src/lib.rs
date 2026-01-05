@@ -28,3 +28,12 @@ pub use entities::account::{Account, AccountClass, AccountStatus, AccountType, B
 
 // Re-export Item types for convenience
 pub use entities::item::{Item, PurchaseDetails, SalesDetails};
+
+// Re-export Leave Application types for convenience
+pub use payroll::leave_application::{
+    LeaveApplication, LeavePeriod, LeavePeriodStatus,
+    ListParameters as LeaveApplicationListParameters, PayOutType, PostLeaveApplication,
+};
+
+// Re-export Leave Type for convenience
+pub use payroll::settings::leave_types::LeaveType;

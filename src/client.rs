@@ -29,8 +29,10 @@ use crate::error::{self, Error, Result};
 use crate::oauth::{KeyPair, OAuthClient};
 use crate::payroll::{
     employee::{self, Employee},
+    leave_application::{self, LeaveApplication, PostLeaveApplication},
     settings::{
         earnings_rates::{self, EarningsRate},
+        leave_types::LeaveType,
         pay_calendar::{self, PayCalendar},
     },
 };
@@ -1320,6 +1322,18 @@ impl Client {
     pub fn items(&self) -> ItemsApi<'_> {
         ItemsApi { client: self }
     }
+
+    /// Access the leave applications API
+    #[must_use]
+    pub fn leave_applications(&self) -> LeaveApplicationsApi<'_> {
+        LeaveApplicationsApi { client: self }
+    }
+
+    /// Access the leave types API
+    #[must_use]
+    pub fn leave_types(&self) -> LeaveTypesApi<'_> {
+        LeaveTypesApi { client: self }
+    }
 }
 
 /// API handler for Accounts (Chart of Accounts) endpoints
@@ -2063,5 +2077,122 @@ impl ItemsApi<'_> {
         details: &str,
     ) -> Result<Vec<item::HistoryRecord>> {
         item::create_history(self.client, item_id, details).await
+    }
+}
+
+/// API handler for Leave Applications endpoints
+#[derive(Debug)]
+pub struct LeaveApplicationsApi<'a> {
+    client: &'a Client,
+}
+
+impl LeaveApplicationsApi<'_> {
+    /// List approved leave applications (v1 endpoint)
+    ///
+    /// This endpoint only returns leave applications that have been approved.
+    /// Use `list_v2` to get all leave including pending and rejected.
+    ///
+    /// # Parameters
+    ///
+    /// * `parameters` - Optional filter parameters
+    /// * `modified_after` - Optional ISO8601 timestamp (format: yyyy-mm-ddThh:mm:ss) to filter by modification date
+    #[instrument(skip(self, parameters, modified_after))]
+    pub async fn list(
+        &self,
+        parameters: Option<leave_application::ListParameters>,
+        modified_after: Option<String>,
+    ) -> Result<Vec<LeaveApplication>> {
+        LeaveApplication::list(self.client, parameters.as_ref(), modified_after).await
+    }
+
+    /// List all leave applications (v2 endpoint)
+    ///
+    /// This endpoint returns leave with all statuses: SCHEDULED, PROCESSED,
+    /// REQUESTED (awaiting approval), and REJECTED.
+    ///
+    /// # Parameters
+    ///
+    /// * `parameters` - Optional filter parameters
+    /// * `modified_after` - Optional ISO8601 timestamp to filter by modification date
+    #[instrument(skip(self, parameters, modified_after))]
+    pub async fn list_v2(
+        &self,
+        parameters: Option<leave_application::ListParameters>,
+        modified_after: Option<String>,
+    ) -> Result<Vec<LeaveApplication>> {
+        LeaveApplication::list_v2(self.client, parameters.as_ref(), modified_after).await
+    }
+
+    /// List all approved leave without filtering
+    #[instrument(skip(self))]
+    pub async fn list_all(&self) -> Result<Vec<LeaveApplication>> {
+        self.list(None, None).await
+    }
+
+    /// Retrieve a single leave application by ID
+    #[instrument(skip(self))]
+    pub async fn get(&self, leave_application_id: Uuid) -> Result<LeaveApplication> {
+        LeaveApplication::get(self.client, leave_application_id).await
+    }
+
+    /// Create a new leave application
+    #[instrument(skip(self, leave_application))]
+    pub async fn create(
+        &self,
+        leave_application: &PostLeaveApplication,
+    ) -> Result<LeaveApplication> {
+        LeaveApplication::post(self.client, leave_application).await
+    }
+
+    /// Update an existing leave application
+    #[instrument(skip(self, leave_application))]
+    pub async fn update(&self, leave_application: &LeaveApplication) -> Result<LeaveApplication> {
+        LeaveApplication::update(self.client, leave_application).await
+    }
+
+    /// Approve a leave application that is in REQUESTED status
+    #[instrument(skip(self))]
+    pub async fn approve(&self, leave_application_id: Uuid) -> Result<LeaveApplication> {
+        LeaveApplication::approve(self.client, leave_application_id).await
+    }
+
+    /// Reject a leave application that is in REQUESTED status
+    #[instrument(skip(self))]
+    pub async fn reject(&self, leave_application_id: Uuid) -> Result<LeaveApplication> {
+        LeaveApplication::reject(self.client, leave_application_id).await
+    }
+}
+
+/// API handler for Leave Types endpoints
+#[derive(Debug)]
+pub struct LeaveTypesApi<'a> {
+    client: &'a Client,
+}
+
+impl LeaveTypesApi<'_> {
+    /// Retrieve a list of leave types
+    ///
+    /// Leave types are retrieved from the PayItems endpoint.
+    #[instrument(skip(self))]
+    pub async fn list(&self) -> Result<Vec<LeaveType>> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "PascalCase")]
+        struct PayItems {
+            #[serde(default)]
+            leave_types: Vec<LeaveType>,
+        }
+
+        #[derive(Deserialize)]
+        #[serde(rename_all = "PascalCase")]
+        struct ListResponse {
+            pay_items: PayItems,
+        }
+
+        let empty_vec: Vec<String> = Vec::new();
+        let response: ListResponse = self
+            .client
+            .get(earnings_rates::ENDPOINT, &empty_vec)
+            .await?;
+        Ok(response.pay_items.leave_types)
     }
 }
