@@ -357,7 +357,7 @@ impl Client {
     /// client.ensure_valid_token().await?;
     ///
     /// // Now make requests knowing the token is fresh
-    /// let contacts = client.contacts().list_all().await?;
+    /// let contacts = client.contacts().list().await?;
     /// # Ok(())
     /// # }
     /// ```
@@ -516,7 +516,7 @@ impl Client {
                 Ok(response) => {
                     self.update_rate_limit_info(response.headers()).await;
 
-                    match Self::handle_response(response).await {
+                    match Self::handle_response(response, "GET").await {
                         Ok(result) => return Ok(result),
                         Err(e) => {
                             // Check for token expiry
@@ -609,7 +609,7 @@ impl Client {
                 Ok(response) => {
                     self.update_rate_limit_info(response.headers()).await;
 
-                    match Self::handle_response(response).await {
+                    match Self::handle_response(response, "POST").await {
                         Ok(result) => return Ok(result),
                         Err(e) => {
                             // Check for token expiry
@@ -693,7 +693,7 @@ impl Client {
                 Ok(response) => {
                     self.update_rate_limit_info(response.headers()).await;
 
-                    match Self::handle_response(response).await {
+                    match Self::handle_response(response, "PUT").await {
                         Ok(result) => return Ok(result),
                         Err(e) => {
                             // Check for token expiry
@@ -1032,6 +1032,7 @@ impl Client {
     #[instrument(skip(response))]
     async fn handle_response<T: DeserializeOwned + Sized>(
         response: reqwest::Response,
+        method: &str,
     ) -> Result<T> {
         let status = response.status();
         let url = response.url().to_string();
@@ -1042,7 +1043,8 @@ impl Client {
             .to_string();
 
         tracing::debug!(
-            "Response from {}: status={}, entity_type={}",
+            "Response from {} {}: status={}, entity_type={}",
+            method,
             url,
             status,
             entity_type
@@ -1108,18 +1110,28 @@ impl Client {
 
         let handle_deserialize_error = {
             let text = text.clone();
-            |e: serde_json::Error| {
+            let url = url.clone();
+            let entity_type = entity_type.clone();
+            let method = method.to_string();
+            move |e: serde_json::Error| {
                 tracing::error!(
-                    "Deserialization error: {}, near position: {} - response text around that position: {}",
-                    e,
-                    e.column(),
-                    &text
-                        .chars()
-                        .skip(e.column().saturating_sub(30))
-                        .take(100)
-                        .collect::<String>()
+                    url = %url,
+                    method = %method,
+                    status = %status,
+                    entity_type = %entity_type,
+                    error_column = e.column(),
+                    response_body_len = text.len(),
+                    "Xero API deserialization error: {}",
+                    e
                 );
-                Error::DeserializationError(e, Some(text))
+                Error::deserialization_error(
+                    e,
+                    url.clone(),
+                    &method,
+                    status,
+                    text.clone(),
+                    entity_type.clone(),
+                )
             }
         };
 

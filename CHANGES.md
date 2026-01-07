@@ -5,6 +5,80 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0-alpha.13] - 2026-01-07
+
+### Breaking Changes
+- **DeserializationError variant**: Changed from tuple variant to struct variant
+  - **Before**: `DeserializationError(serde_json::Error, Option<String>)`
+  - **After**: `DeserializationError { source, response_body, error_span, context, entity_type, method, url, status_code }`
+  - Pattern matching must now use struct syntax: `DeserializationError { source, context, .. }`
+
+### Added
+- **ResponseContext struct**: New struct capturing full HTTP response context for debugging
+  - `url`: The URL that was called
+  - `method`: HTTP method (GET, POST, PUT, DELETE)
+  - `status_code`: HTTP status code returned
+  - `response_body`: Raw response body (truncated to 2KB)
+  - `entity_type`: The type being deserialized
+
+- **Rich error diagnostics with miette**: DeserializationError now uses miette's `#[source_code]` and `#[label]` attributes
+  - Response body displayed with error position highlighted
+  - Beautiful terminal output for debugging parse failures
+  - Includes help text and documentation URL
+
+- **Error accessor methods**: New methods on `Error` enum
+  - `response_context()`: Get full ResponseContext for DeserializationError
+  - `response_body()`: Get response body (works for DeserializationError, NotFound, RateLimitExceeded)
+  - `url()`: Get URL (works for DeserializationError, NotFound, RateLimitExceeded)
+  - `status_code()`: Get HTTP status code
+
+- **Constructor helper**: `Error::deserialization_error()` factory method
+  - Creates DeserializationError with full HTTP context
+  - Automatically calculates error span for miette highlighting
+
+### Changed
+- **handle_response() signature**: Now accepts `method: &str` parameter
+  - Enables capturing HTTP method in error context
+  - All execute_* methods updated to pass method string
+
+- **Improved error messages**: DeserializationError now shows:
+  - Entity type being deserialized
+  - HTTP method and URL
+  - HTTP status code
+  - Parse error details with position
+
+### Migration Guide
+
+```rust
+// BEFORE (v0.2.0-alpha.12 and earlier):
+match error {
+    xero_rs::Error::DeserializationError(serde_error, maybe_body) => {
+        println!("Parse error: {}", serde_error);
+        if let Some(body) = maybe_body {
+            println!("Response: {}", body);
+        }
+    }
+}
+
+// AFTER (v0.2.0-alpha.13):
+match error {
+    xero_rs::Error::DeserializationError { source, context, .. } => {
+        println!("Parse error: {}", source);
+        println!("URL: {} {}", context.method, context.url);
+        println!("Status: {}", context.status_code);
+        println!("Response: {}", context.response_body);
+    }
+}
+
+// Or use the new accessor methods:
+if let Some(body) = error.response_body() {
+    println!("Response: {}", body);
+}
+if let Some(url) = error.url() {
+    println!("URL: {}", url);
+}
+```
+
 ## [0.2.0-alpha.6] - 2025-12-27
 
 ### Breaking Changes

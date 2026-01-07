@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::time::Duration;
 
-use miette::Diagnostic;
+use miette::{Diagnostic, SourceSpan};
 use oauth2::HttpClientError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -48,6 +48,58 @@ impl fmt::Display for RateLimitType {
             Self::Daily => write!(f, "daily (5000 calls/day per tenant)"),
             Self::AppMinute => write!(f, "app minute (10000 calls/min across all tenants)"),
             Self::Unknown(s) => write!(f, "unknown ({s})"),
+        }
+    }
+}
+
+/// HTTP response context for debugging API errors.
+///
+/// This struct captures the essential information needed to debug failed API requests,
+/// particularly deserialization errors where the response body is crucial for understanding
+/// what Xero returned (e.g., HTML error pages, maintenance messages, etc.).
+#[derive(Debug, Clone)]
+pub struct ResponseContext {
+    /// The URL that was called
+    pub url: String,
+    /// The HTTP method used (GET, POST, PUT, DELETE)
+    pub method: String,
+    /// The HTTP status code returned
+    pub status_code: reqwest::StatusCode,
+    /// The raw response body (truncated if too large)
+    pub response_body: String,
+    /// The expected entity type being deserialized
+    pub entity_type: String,
+}
+
+impl ResponseContext {
+    /// Maximum length for response body in error context (2KB)
+    pub const MAX_BODY_LENGTH: usize = 2000;
+
+    /// Create a new ResponseContext, truncating body if needed
+    #[must_use]
+    pub fn new(
+        url: String,
+        method: &str,
+        status_code: reqwest::StatusCode,
+        response_body: String,
+        entity_type: String,
+    ) -> Self {
+        let truncated_body = if response_body.len() > Self::MAX_BODY_LENGTH {
+            format!(
+                "{}... [truncated, total {} bytes]",
+                &response_body[..Self::MAX_BODY_LENGTH],
+                response_body.len()
+            )
+        } else {
+            response_body
+        };
+
+        Self {
+            url,
+            method: method.to_string(),
+            status_code,
+            response_body: truncated_body,
+            entity_type,
         }
     }
 }
@@ -407,12 +459,45 @@ pub enum Error {
     )]
     AttachmentTooLarge,
 
-    #[error("error decoding response: {0:?}")]
+    /// Failed to parse the API response as JSON.
+    ///
+    /// This error includes the full HTTP response context for debugging.
+    /// The response body is displayed with the error position highlighted.
+    ///
+    /// **Breaking Change (v0.2.0-alpha.13):** Changed from tuple variant
+    /// `DeserializationError(serde_json::Error, Option<String>)` to struct variant.
+    /// Use pattern matching with `{ source, context, .. }` instead.
+    #[error(
+        "Failed to parse {entity_type} response from {method} {url} (HTTP {status_code}): {source}"
+    )]
     #[diagnostic(
         code(xero_rs::deserialization_error),
-        help("The API returned data in an unexpected format")
+        help(
+            "Xero returned non-JSON data. This often indicates an API outage, authentication issue, or rate limiting. Check the response body below."
+        ),
+        url("https://developer.xero.com/documentation/api/api-overview")
     )]
-    DeserializationError(#[source] serde_json::Error, Option<String>),
+    DeserializationError {
+        /// The underlying JSON parsing error
+        #[source]
+        source: serde_json::Error,
+        /// The response body for miette source display
+        #[source_code]
+        response_body: String,
+        /// Label pointing to error position in the response
+        #[label("parse error here")]
+        error_span: SourceSpan,
+        /// Full HTTP response context
+        context: ResponseContext,
+        /// Entity type for display (from type name)
+        entity_type: String,
+        /// HTTP method for display
+        method: String,
+        /// URL for display
+        url: String,
+        /// Status code for display
+        status_code: String,
+    },
 
     #[error("object not found: {entity} (url: {url})")]
     #[diagnostic(
@@ -482,6 +567,101 @@ pub enum Error {
     },
 }
 
+impl Error {
+    /// Create a DeserializationError with full HTTP context.
+    ///
+    /// This constructor captures all the debugging information needed to diagnose
+    /// why Xero returned non-JSON data (e.g., HTML error pages, maintenance messages).
+    ///
+    /// # Arguments
+    ///
+    /// * `source` - The underlying serde_json parsing error
+    /// * `url` - The URL that was called
+    /// * `method` - The HTTP method (GET, POST, PUT, DELETE)
+    /// * `status_code` - The HTTP status code returned
+    /// * `response_body` - The raw response body
+    /// * `entity_type` - The type name being deserialized
+    #[must_use]
+    pub fn deserialization_error(
+        source: serde_json::Error,
+        url: String,
+        method: &str,
+        status_code: reqwest::StatusCode,
+        response_body: String,
+        entity_type: String,
+    ) -> Self {
+        // Calculate span: start at error column, extend ~100 chars or to end of body
+        let col = source.column();
+        let start = col.saturating_sub(1);
+        let len = response_body.len().saturating_sub(start).min(100).max(1);
+        let error_span = SourceSpan::new(start.into(), len.into());
+
+        let context = ResponseContext::new(
+            url.clone(),
+            method,
+            status_code,
+            response_body.clone(),
+            entity_type.clone(),
+        );
+
+        Self::DeserializationError {
+            source,
+            response_body,
+            error_span,
+            context,
+            entity_type,
+            method: method.to_string(),
+            url,
+            status_code: status_code.to_string(),
+        }
+    }
+
+    /// Get the response context if this error has HTTP context.
+    ///
+    /// Returns `Some(&ResponseContext)` for:
+    /// - `DeserializationError`
+    #[must_use]
+    pub fn response_context(&self) -> Option<&ResponseContext> {
+        match self {
+            Self::DeserializationError { context, .. } => Some(context),
+            _ => None,
+        }
+    }
+
+    /// Get the response body for errors that capture it.
+    #[must_use]
+    pub fn response_body(&self) -> Option<&str> {
+        match self {
+            Self::DeserializationError { response_body, .. } => Some(response_body),
+            Self::NotFound { response_body, .. } => response_body.as_deref(),
+            Self::RateLimitExceeded { response_body, .. } => response_body.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// Get the URL for errors that capture it.
+    #[must_use]
+    pub fn url(&self) -> Option<&str> {
+        match self {
+            Self::DeserializationError { url, .. } => Some(url),
+            Self::NotFound { url, .. } => Some(url),
+            Self::RateLimitExceeded { url, .. } => Some(url),
+            _ => None,
+        }
+    }
+
+    /// Get the HTTP status code for errors that capture it.
+    #[must_use]
+    pub fn status_code(&self) -> Option<reqwest::StatusCode> {
+        match self {
+            Self::DeserializationError { context, .. } => Some(context.status_code),
+            Self::NotFound { status_code, .. } => Some(*status_code),
+            Self::RateLimitExceeded { status_code, .. } => Some(*status_code),
+            _ => None,
+        }
+    }
+}
+
 impl From<reqwest::Error> for Error {
     fn from(e: reqwest::Error) -> Self {
         Self::Request(e)
@@ -490,7 +670,24 @@ impl From<reqwest::Error> for Error {
 
 impl From<serde_json::Error> for Error {
     fn from(e: serde_json::Error) -> Self {
-        Self::DeserializationError(e, None)
+        // For standalone serde errors without HTTP context, create minimal error
+        let col = e.column().saturating_sub(1);
+        Self::DeserializationError {
+            error_span: SourceSpan::new(col.into(), 1usize.into()),
+            entity_type: "unknown".to_string(),
+            method: "unknown".to_string(),
+            url: "unknown".to_string(),
+            status_code: "unknown".to_string(),
+            context: ResponseContext::new(
+                "unknown".to_string(),
+                "unknown",
+                reqwest::StatusCode::OK,
+                String::new(),
+                "unknown".to_string(),
+            ),
+            response_body: String::new(),
+            source: e,
+        }
     }
 }
 

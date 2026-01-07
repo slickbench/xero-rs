@@ -6,11 +6,11 @@
 //! # Example
 //!
 //! ```no_run
-//! use xero_rs::Client;
+//! use xero_rs::{Client, KeyPair};
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! let client = // ... create client
-//! # todo!();
+//! let key_pair = KeyPair::from_env();
+//! let client = Client::from_client_credentials(key_pair, None).await?;
 //!
 //! // List all approved leave applications
 //! let leave_apps = client.leave_applications().list(None, None).await?;
