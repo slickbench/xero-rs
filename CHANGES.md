@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0-alpha.15] - 2026-01-20
+
+### Added
+- **If-Modified-Since header support**: New `get_endpoint_with_modified_since()` method on Client
+  - Enables incremental syncing by only fetching records modified after a given timestamp
+  - Reduces API calls and data transfer for sync operations
+  - Xero returns empty result set when no records have changed since the timestamp
+  - Example: `client.get_endpoint_with_modified_since(endpoint, &params, Some(last_sync_time)).await`
+
+### Changed
+- Internal `execute_get` now delegates to `execute_get_with_modified_since`
+- No breaking changes to existing API
+
+## [0.2.0-alpha.14] - 2026-01-15
+
+### Fixed
+- Minor bug fixes and improvements
+
 ## [0.2.0-alpha.13] - 2026-01-07
 
 ### Breaking Changes

@@ -500,17 +500,46 @@ impl Client {
         T: DeserializeOwned,
         Q: Serialize,
     {
+        self.execute_get_with_modified_since(url, query, None).await
+    }
+
+    /// Execute a GET request with If-Modified-Since header for incremental syncing.
+    ///
+    /// This allows fetching only records that have been modified since the given timestamp,
+    /// reducing API calls and data transfer for sync operations.
+    async fn execute_get_with_modified_since<T, Q>(
+        &self,
+        url: Url,
+        query: &Q,
+        if_modified_since: Option<time::OffsetDateTime>,
+    ) -> Result<T>
+    where
+        T: DeserializeOwned,
+        Q: Serialize,
+    {
         let mut attempts = 0;
         let mut token_refreshed = false;
 
         loop {
-            // Build and execute the request
-            let response = self
+            // Build the request
+            let mut request = self
                 .build_request(Method::GET, url.clone())
                 .await
-                .query(query)
-                .send()
-                .await;
+                .query(query);
+
+            // Add If-Modified-Since header if provided
+            if let Some(modified_since) = if_modified_since {
+                // Format as RFC 2822 which Xero accepts
+                let formatted = modified_since
+                    .format(&time::format_description::well_known::Rfc2822)
+                    .unwrap_or_else(|_| modified_since.to_string());
+                if let Ok(header_value) = header::HeaderValue::from_str(&formatted) {
+                    request = request.header(header::IF_MODIFIED_SINCE, header_value);
+                }
+            }
+
+            // Execute the request
+            let response = request.send().await;
 
             match response {
                 Ok(response) => {
@@ -920,6 +949,59 @@ impl Client {
         trace!(?query, endpoint = ?endpoint, "making GET request with endpoint");
         let url = endpoint.to_url()?;
         self.execute_get(url, query).await
+    }
+
+    /// Perform a `GET` request with If-Modified-Since header for incremental syncing.
+    ///
+    /// This method is useful for sync operations where you only want to fetch records
+    /// that have been modified since your last sync. The Xero API will return an empty
+    /// result set (or 304 Not Modified) if no records have changed.
+    ///
+    /// # Arguments
+    ///
+    /// * `endpoint` - The Xero API endpoint to query
+    /// * `query` - Query parameters for the request
+    /// * `if_modified_since` - Only return records modified after this timestamp
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use xero_rs::Client;
+    /// use time::OffsetDateTime;
+    ///
+    /// # async fn example(client: &Client) -> Result<(), Box<dyn std::error::Error>> {
+    /// // Fetch only quotes modified in the last hour
+    /// let one_hour_ago = OffsetDateTime::now_utc() - time::Duration::hours(1);
+    /// let quotes: serde_json::Value = client
+    ///     .get_endpoint_with_modified_since(
+    ///         xero_rs::XeroEndpoint::Quotes,
+    ///         &std::collections::HashMap::<String, String>::new(),
+    ///         Some(one_hour_ago),
+    ///     )
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[instrument(skip(self, query))]
+    pub async fn get_endpoint_with_modified_since<
+        'a,
+        R: DeserializeOwned,
+        T: Serialize + Sized + fmt::Debug,
+    >(
+        &self,
+        endpoint: XeroEndpoint,
+        query: &T,
+        if_modified_since: Option<time::OffsetDateTime>,
+    ) -> Result<R> {
+        trace!(
+            ?query,
+            endpoint = ?endpoint,
+            ?if_modified_since,
+            "making GET request with endpoint and If-Modified-Since"
+        );
+        let url = endpoint.to_url()?;
+        self.execute_get_with_modified_since(url, query, if_modified_since)
+            .await
     }
 
     /// Perform an authenticated `PUT` request against the API with automatic retry.
