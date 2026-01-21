@@ -529,9 +529,9 @@ impl Client {
 
             // Add If-Modified-Since header if provided
             if let Some(modified_since) = if_modified_since {
-                // Format as RFC 2822 which Xero accepts
+                // Format as ISO 8601 UTC which Xero expects: yyyy-mm-ddThh:mm:ss
                 let formatted = modified_since
-                    .format(&time::format_description::well_known::Rfc2822)
+                    .format(&time::format_description::well_known::Iso8601::DEFAULT)
                     .unwrap_or_else(|_| modified_since.to_string());
                 if let Ok(header_value) = header::HeaderValue::from_str(&formatted) {
                     request = request.header(header::IF_MODIFIED_SINCE, header_value);
