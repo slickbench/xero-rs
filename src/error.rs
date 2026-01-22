@@ -712,17 +712,3 @@ impl From<ForbiddenResponse> for Error {
 /// This is already a Miette diagnostic result due to the implementation of
 /// the Diagnostic trait for the Error type.
 pub type Result<O> = std::result::Result<O, Error>;
-
-/// Macro to handle common error mapping patterns
-#[macro_export]
-macro_rules! handle_api_response {
-    ($response:expr, $entity_type:expr) => {
-        match $response {
-            Ok(response) => Ok(response),
-            Err(e) => {
-                tracing::error!("API error for {}: {:?}", $entity_type, e);
-                Err(e)
-            }
-        }
-    };
-}

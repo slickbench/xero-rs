@@ -301,23 +301,26 @@ impl Client {
                 .request_async(&http_client)
                 .await
                 .map_err(Error::OAuth2)?;
-            info!("Successfully refreshed access token");
 
             token_state.access_token = token_result.access_token().clone();
             token_state.expires_at = TokenState::calculate_expiry(token_result.expires_in());
-            if let Some(new_refresh_token) = token_result.refresh_token() {
-                token_state.refresh_token = Some(new_refresh_token.clone());
-                info!("Successfully refreshed refresh token");
-            }
+            let refreshed_refresh_token =
+                if let Some(new_refresh_token) = token_result.refresh_token() {
+                    token_state.refresh_token = Some(new_refresh_token.clone());
+                    true
+                } else {
+                    false
+                };
+            info!(refreshed_refresh_token, "Successfully refreshed tokens");
         } else if let Some(_refresh_credentials) = &self.refresh_credentials {
             let token_result = oauth_client
                 .exchange_client_credentials()
                 .request_async(&http_client)
                 .await
                 .map_err(Error::OAuth2)?;
-            info!("Successfully refreshed access token");
             token_state.access_token = token_result.access_token().clone();
             token_state.expires_at = TokenState::calculate_expiry(token_result.expires_in());
+            info!("Successfully refreshed access token via client credentials");
         } else {
             error!("No refresh token or credentials available");
         }
@@ -371,9 +374,8 @@ impl Client {
 
         if needs_refresh {
             if let Some(key_pair) = &self.refresh_credentials {
-                tracing::debug!("Token expiring soon, proactively refreshing");
+                tracing::info!("Token expiring soon, proactively refreshing");
                 self.refresh_access_token(key_pair.clone()).await?;
-                tracing::info!("Proactively refreshed access token");
             } else {
                 tracing::warn!(
                     "Token is expiring but no refresh credentials available. \
@@ -494,6 +496,61 @@ impl Client {
         token_state.access_token = AccessToken::new("invalid_token".to_string());
     }
 
+    /// Handle error for potential retry (token refresh or rate limiting)
+    ///
+    /// Returns `Ok(true)` if the request should be retried, `Ok(false)` if it should not,
+    /// or `Err` with the original error if retry is not applicable.
+    async fn handle_error_for_retry(
+        &self,
+        error: &Error,
+        token_refreshed: &mut bool,
+        attempts: &mut usize,
+    ) -> std::result::Result<bool, ()> {
+        // Check for token expiry
+        if let Error::API(api_err) = error
+            && !*token_refreshed
+            && matches!(api_err.error, error::ErrorType::UnauthorisedException)
+        {
+            let has_refresh_capability = self.refresh_credentials.is_some()
+                || self.token_state.read().await.refresh_token.is_some();
+
+            if has_refresh_capability && self.refresh_credentials.is_some() {
+                let key_pair = self.refresh_credentials.clone().unwrap();
+
+                match self.refresh_access_token(key_pair).await {
+                    Ok(()) => {
+                        *token_refreshed = true;
+                        return Ok(true); // Retry
+                    }
+                    Err(refresh_err) => {
+                        tracing::error!("Failed to refresh access token: {:?}", refresh_err);
+                        return Err(()); // Don't retry, return original error
+                    }
+                }
+            }
+        }
+
+        // Check for rate limiting
+        if let Error::RateLimitExceeded { retry_after, .. } = error
+            && *attempts < MAX_RETRY_ATTEMPTS
+        {
+            *attempts += 1;
+            let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
+
+            tracing::warn!(
+                attempt = *attempts,
+                max_attempts = MAX_RETRY_ATTEMPTS,
+                wait_ms = wait_time.as_millis() as u64,
+                "Rate limit exceeded, waiting before retry"
+            );
+
+            sleep(wait_time).await;
+            return Ok(true); // Retry
+        }
+
+        Err(()) // Don't retry
+    }
+
     /// Execute a GET request with automatic retry for rate limit errors and token expiry
     async fn execute_get<T, Q>(&self, url: Url, query: &Q) -> Result<T>
     where
@@ -548,54 +605,11 @@ impl Client {
                     match Self::handle_response(response, "GET").await {
                         Ok(result) => return Ok(result),
                         Err(e) => {
-                            // Check for token expiry
-                            if let Error::API(ref api_err) = e
-                                && !token_refreshed
-                                && matches!(api_err.error, error::ErrorType::UnauthorisedException)
+                            if self
+                                .handle_error_for_retry(&e, &mut token_refreshed, &mut attempts)
+                                .await
+                                .is_ok_and(|should_retry| should_retry)
                             {
-                                // Check if we have refresh credentials or token
-                                let has_refresh_capability = self.refresh_credentials.is_some()
-                                    || self.token_state.read().await.refresh_token.is_some();
-
-                                if has_refresh_capability && self.refresh_credentials.is_some() {
-                                    tracing::debug!("Token expired, attempting automatic refresh");
-                                    let key_pair = self.refresh_credentials.clone().unwrap();
-
-                                    // Attempt to refresh the token
-                                    match self.refresh_access_token(key_pair).await {
-                                        Ok(()) => {
-                                            tracing::info!("Successfully refreshed access token");
-                                            token_refreshed = true;
-                                            // Retry the request with the new token
-                                            continue;
-                                        }
-                                        Err(refresh_err) => {
-                                            tracing::error!(
-                                                "Failed to refresh access token: {:?}",
-                                                refresh_err
-                                            );
-                                            // Return the original unauthorized error if refresh fails
-                                            return Err(e);
-                                        }
-                                    }
-                                }
-                            }
-                            // Check for rate limiting
-                            if let Error::RateLimitExceeded { retry_after, .. } = e
-                                && attempts < MAX_RETRY_ATTEMPTS
-                            {
-                                attempts += 1;
-                                let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
-
-                                tracing::warn!(
-                                    "Rate limit exceeded (attempt {}/{}), waiting for {:?} before retrying",
-                                    attempts,
-                                    MAX_RETRY_ATTEMPTS,
-                                    wait_time
-                                );
-
-                                // Wait for the specified time before retrying
-                                sleep(wait_time).await;
                                 continue;
                             }
                             return Err(e);
@@ -641,54 +655,11 @@ impl Client {
                     match Self::handle_response(response, "POST").await {
                         Ok(result) => return Ok(result),
                         Err(e) => {
-                            // Check for token expiry
-                            if let Error::API(ref api_err) = e
-                                && !token_refreshed
-                                && matches!(api_err.error, error::ErrorType::UnauthorisedException)
+                            if self
+                                .handle_error_for_retry(&e, &mut token_refreshed, &mut attempts)
+                                .await
+                                .is_ok_and(|should_retry| should_retry)
                             {
-                                // Check if we have refresh credentials or token
-                                let has_refresh_capability = self.refresh_credentials.is_some()
-                                    || self.token_state.read().await.refresh_token.is_some();
-
-                                if has_refresh_capability && self.refresh_credentials.is_some() {
-                                    tracing::debug!("Token expired, attempting automatic refresh");
-                                    let key_pair = self.refresh_credentials.clone().unwrap();
-
-                                    // Attempt to refresh the token
-                                    match self.refresh_access_token(key_pair).await {
-                                        Ok(()) => {
-                                            tracing::info!("Successfully refreshed access token");
-                                            token_refreshed = true;
-                                            // Retry the request with the new token
-                                            continue;
-                                        }
-                                        Err(refresh_err) => {
-                                            tracing::error!(
-                                                "Failed to refresh access token: {:?}",
-                                                refresh_err
-                                            );
-                                            // Return the original unauthorized error if refresh fails
-                                            return Err(e);
-                                        }
-                                    }
-                                }
-                            }
-                            // Check for rate limiting
-                            if let Error::RateLimitExceeded { retry_after, .. } = e
-                                && attempts < MAX_RETRY_ATTEMPTS
-                            {
-                                attempts += 1;
-                                let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
-
-                                tracing::warn!(
-                                    "Rate limit exceeded (attempt {}/{}), waiting for {:?} before retrying",
-                                    attempts,
-                                    MAX_RETRY_ATTEMPTS,
-                                    wait_time
-                                );
-
-                                // Wait for the specified time before retrying
-                                sleep(wait_time).await;
                                 continue;
                             }
                             return Err(e);
@@ -725,54 +696,11 @@ impl Client {
                     match Self::handle_response(response, "PUT").await {
                         Ok(result) => return Ok(result),
                         Err(e) => {
-                            // Check for token expiry
-                            if let Error::API(ref api_err) = e
-                                && !token_refreshed
-                                && matches!(api_err.error, error::ErrorType::UnauthorisedException)
+                            if self
+                                .handle_error_for_retry(&e, &mut token_refreshed, &mut attempts)
+                                .await
+                                .is_ok_and(|should_retry| should_retry)
                             {
-                                // Check if we have refresh credentials or token
-                                let has_refresh_capability = self.refresh_credentials.is_some()
-                                    || self.token_state.read().await.refresh_token.is_some();
-
-                                if has_refresh_capability && self.refresh_credentials.is_some() {
-                                    tracing::debug!("Token expired, attempting automatic refresh");
-                                    let key_pair = self.refresh_credentials.clone().unwrap();
-
-                                    // Attempt to refresh the token
-                                    match self.refresh_access_token(key_pair).await {
-                                        Ok(()) => {
-                                            tracing::info!("Successfully refreshed access token");
-                                            token_refreshed = true;
-                                            // Retry the request with the new token
-                                            continue;
-                                        }
-                                        Err(refresh_err) => {
-                                            tracing::error!(
-                                                "Failed to refresh access token: {:?}",
-                                                refresh_err
-                                            );
-                                            // Return the original unauthorized error if refresh fails
-                                            return Err(e);
-                                        }
-                                    }
-                                }
-                            }
-                            // Check for rate limiting
-                            if let Error::RateLimitExceeded { retry_after, .. } = e
-                                && attempts < MAX_RETRY_ATTEMPTS
-                            {
-                                attempts += 1;
-                                let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
-
-                                tracing::warn!(
-                                    "Rate limit exceeded (attempt {}/{}), waiting for {:?} before retrying",
-                                    attempts,
-                                    MAX_RETRY_ATTEMPTS,
-                                    wait_time
-                                );
-
-                                // Wait for the specified time before retrying
-                                sleep(wait_time).await;
                                 continue;
                             }
                             return Err(e);
@@ -825,22 +753,24 @@ impl Client {
                             .unwrap_or(error::RateLimitType::Unknown("not specified".to_string()));
 
                         let text = response.text().await.unwrap_or_default();
-                        let url = url.to_string();
+                        let url_str = url.to_string();
 
-                        tracing::warn!(
-                            "Rate limit exceeded for {}: limit_type={}, retry_after={:?}",
-                            url,
-                            limit_type,
-                            retry_after
-                        );
-
-                        return Err(Error::RateLimitExceeded {
+                        let error = Error::RateLimitExceeded {
                             limit_type,
                             retry_after,
                             status_code: status,
-                            url,
+                            url: url_str,
                             response_body: Some(text),
-                        });
+                        };
+
+                        if self
+                            .handle_error_for_retry(&error, &mut token_refreshed, &mut attempts)
+                            .await
+                            .is_ok_and(|should_retry| should_retry)
+                        {
+                            continue;
+                        }
+                        return Err(error);
                     }
 
                     // Try to get error details
@@ -854,54 +784,11 @@ impl Client {
                         }
                     };
 
-                    // Check for token expiry
-                    if let Error::API(ref api_err) = error
-                        && !token_refreshed
-                        && matches!(api_err.error, error::ErrorType::UnauthorisedException)
+                    if self
+                        .handle_error_for_retry(&error, &mut token_refreshed, &mut attempts)
+                        .await
+                        .is_ok_and(|should_retry| should_retry)
                     {
-                        // Check if we have refresh credentials or token
-                        let has_refresh_capability = self.refresh_credentials.is_some()
-                            || self.token_state.read().await.refresh_token.is_some();
-
-                        if has_refresh_capability && self.refresh_credentials.is_some() {
-                            tracing::debug!("Token expired, attempting automatic refresh");
-                            let key_pair = self.refresh_credentials.clone().unwrap();
-
-                            // Attempt to refresh the token
-                            match self.refresh_access_token(key_pair).await {
-                                Ok(()) => {
-                                    tracing::info!("Successfully refreshed access token");
-                                    token_refreshed = true;
-                                    // Retry the request with the new token
-                                    continue;
-                                }
-                                Err(refresh_err) => {
-                                    tracing::error!(
-                                        "Failed to refresh access token: {:?}",
-                                        refresh_err
-                                    );
-                                    // Return the original unauthorized error if refresh fails
-                                    return Err(error);
-                                }
-                            }
-                        }
-                    }
-                    // Check for rate limiting
-                    if let Error::RateLimitExceeded { retry_after, .. } = error
-                        && attempts < MAX_RETRY_ATTEMPTS
-                    {
-                        attempts += 1;
-                        let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
-
-                        tracing::warn!(
-                            "Rate limit exceeded (attempt {}/{}), waiting for {:?} before retrying",
-                            attempts,
-                            MAX_RETRY_ATTEMPTS,
-                            wait_time
-                        );
-
-                        // Wait for the specified time before retrying
-                        sleep(wait_time).await;
                         continue;
                     }
                     return Err(error);
@@ -1186,9 +1073,7 @@ impl Client {
         }
 
         let text = response.text().await?;
-
-        // Only log brief info about response size at debug level
-        tracing::debug!("Response body size: {} bytes", text.len());
+        tracing::trace!(response_size = text.len(), "Response received");
 
         let handle_deserialize_error = {
             let text = text.clone();
@@ -1217,7 +1102,6 @@ impl Client {
             }
         };
 
-        tracing::trace!("Response text:\n{}", text);
         match status {
             StatusCode::NOT_FOUND => Err(Error::NotFound {
                 entity: entity_type,
@@ -1228,24 +1112,14 @@ impl Client {
             StatusCode::UNAUTHORIZED => {
                 let mut body = serde_json::from_str::<serde_json::Value>(&text).unwrap_or_default();
                 body["Type"] = "UnauthorisedException".into();
-                // Try to parse as UnauthorisedException
                 match serde_json::from_value::<error::Response>(body) {
-                    Ok(api_error)
-                        if matches!(api_error.error, error::ErrorType::UnauthorisedException) =>
-                    {
-                        tracing::debug!("Received 401 Unauthorized response");
-                        Err(Error::API(api_error))
-                    }
-                    Ok(api_error) => {
-                        // It's some other API error on a 401 response
-                        Err(Error::API(api_error))
-                    }
+                    Ok(api_error) => Err(Error::API(api_error)),
                     Err(e) => {
-                        // Couldn't parse the error response, return as deserialization error
                         tracing::error!(
-                            "Failed to parse 401 response: {}, raw response: {}",
-                            e,
-                            text
+                            url = %url,
+                            status = %status,
+                            error = %e,
+                            "Failed to parse 401 response"
                         );
                         Err(handle_deserialize_error(e))
                     }
@@ -1254,105 +1128,58 @@ impl Client {
             status => match status {
                 StatusCode::OK => match serde_json::from_str(&text) {
                     Ok(result) => Ok(result),
-                    Err(e) => {
-                        tracing::error!("Failed to deserialize response: {}", e);
-                        Err(handle_deserialize_error(e))
-                    }
+                    Err(e) => Err(handle_deserialize_error(e)),
                 },
                 StatusCode::FORBIDDEN => Err(Error::Forbidden(
                     serde_json::from_str(&text).map_err(handle_deserialize_error)?,
                 )),
                 StatusCode::BAD_REQUEST => {
-                    // Try to parse as API error response
                     match serde_json::from_str::<error::Response>(&text) {
                         Ok(api_error) => {
+                            // Include ValidationException details in a single log
+                            let (elements_count, has_timesheets, empty_elements) =
+                                if let error::ErrorType::ValidationException {
+                                    ref elements,
+                                    ref timesheets,
+                                } = api_error.error
+                                {
+                                    (
+                                        Some(elements.len()),
+                                        timesheets.is_some(),
+                                        elements.is_empty(),
+                                    )
+                                } else {
+                                    (None, false, false)
+                                };
+
                             tracing::error!(
                                 url = %url,
                                 status = %status,
                                 error_number = ?api_error.error_number,
                                 message = ?api_error.message,
-                                detail = ?api_error.detail,
-                                error_type = ?std::mem::discriminant(&api_error.error),
-                                raw_response = %text,
+                                validation_elements = ?elements_count,
+                                has_timesheets = has_timesheets,
+                                empty_elements = empty_elements,
                                 "API error response from Xero"
                             );
 
-                            // Additional logging for ValidationException
-                            if let error::ErrorType::ValidationException {
-                                ref elements,
-                                ref timesheets,
-                            } = api_error.error
-                            {
-                                tracing::warn!(
-                                    elements_count = elements.len(),
-                                    has_timesheets = timesheets.is_some(),
-                                    "ValidationException details: {} validation elements",
-                                    elements.len()
-                                );
-
-                                // Note: Since we removed #[serde(default)], reaching this code with
-                                // empty elements means Xero actually sent Elements: [] in the response.
-                                // This is unusual but not necessarily a deserialization error.
-                                if elements.is_empty() {
-                                    tracing::warn!(
-                                        "Unusual: Xero returned ValidationException with empty Elements array. Raw response: {}",
-                                        text
-                                    );
-                                }
-                            }
-
                             Err(Error::API(api_error))
                         }
-                        Err(e) => {
-                            // If we can't parse the error response, include the raw text
-                            tracing::error!(
-                                "Failed to parse API error response: {}, raw response: {}",
-                                e,
-                                text
-                            );
-                            // Try to extract basic error info from the raw response
-                            if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&text)
-                            {
-                                let error_type = json_value
-                                    .get("Type")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("Unknown");
-                                let message = json_value
-                                    .get("Message")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or(&text);
-                                let error_number = json_value
-                                    .get("ErrorNumber")
-                                    .and_then(serde_json::Value::as_u64)
-                                    .unwrap_or(0);
-
-                                tracing::error!(
-                                    "Xero API error: Type={}, ErrorNumber={}, Message={}",
-                                    error_type,
-                                    error_number,
-                                    message
-                                );
-                            }
-                            Err(handle_deserialize_error(e))
-                        }
+                        Err(e) => Err(handle_deserialize_error(e)),
                     }
                 }
-                _ => {
-                    tracing::error!("Unexpected status code: {}", status);
-                    // Try to parse as API error first
-                    match serde_json::from_str::<error::Response>(&text) {
-                        Ok(api_error) => Err(Error::API(api_error)),
-                        Err(e) => {
-                            // If it's not an API error, return generic error with details
-                            tracing::error!(
-                                "Failed to parse response as API error: {}, raw response: {}",
-                                e,
-                                text
-                            );
-                            Err(handle_deserialize_error(e))
-                        }
+                _ => match serde_json::from_str::<error::Response>(&text) {
+                    Ok(api_error) => Err(Error::API(api_error)),
+                    Err(e) => {
+                        tracing::error!(
+                            url = %url,
+                            status = %status,
+                            error = %e,
+                            "Failed to parse error response"
+                        );
+                        Err(handle_deserialize_error(e))
                     }
-                }
+                },
             },
         }
     }
