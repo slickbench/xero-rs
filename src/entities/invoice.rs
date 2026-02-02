@@ -398,7 +398,9 @@ impl ListParameters {
 pub struct Builder {
     #[serde(rename = "Type")]
     pub r#type: Type,
-    pub contact: ContactIdentifier,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contact: Option<ContactIdentifier>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub line_items: Vec<line_item::Builder>,
     #[serde(
         with = "xero_date_format_option",
@@ -450,7 +452,7 @@ impl Builder {
     ) -> Self {
         Self {
             r#type,
-            contact,
+            contact: Some(contact),
             line_items,
             ..Builder::default()
         }

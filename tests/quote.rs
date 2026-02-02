@@ -123,7 +123,7 @@ async fn create_update_quote() -> Result<()> {
 
     // Create a quote
     let quote_builder = QuoteBuilder {
-        contact: ContactIdentifier::ID(contact_id),
+        contact: Some(ContactIdentifier::ID(contact_id)),
         date: date!(2023 - 10 - 01),
         expiry_date: Some(date!(2023 - 10 - 31)),
         line_items: vec![],
@@ -153,7 +153,7 @@ async fn create_update_quote() -> Result<()> {
 
     // Now update it
     let updated_builder = QuoteBuilder {
-        contact: ContactIdentifier::ID(contact_id),
+        contact: Some(ContactIdentifier::ID(contact_id)),
         date: date!(2023 - 10 - 01),
         expiry_date: Some(date!(2023 - 11 - 15)), // Extended expiry
         line_items: vec![],
@@ -411,7 +411,7 @@ async fn create_quote_with_line_items() -> Result<()> {
     };
 
     let quote_builder = QuoteBuilder {
-        contact: ContactIdentifier::ID(contact_id),
+        contact: Some(ContactIdentifier::ID(contact_id)),
         date: date!(2024 - 01 - 15),
         expiry_date: Some(date!(2024 - 02 - 15)),
         line_items: vec![line_item_1, line_item_2, line_item_3],
@@ -492,7 +492,7 @@ async fn update_quote_line_items() -> Result<()> {
     };
 
     let quote_builder = QuoteBuilder {
-        contact: ContactIdentifier::ID(contact_id),
+        contact: Some(ContactIdentifier::ID(contact_id)),
         date: date!(2024 - 01 - 15),
         expiry_date: Some(date!(2024 - 02 - 15)),
         line_items: vec![initial_line_item],
@@ -543,7 +543,7 @@ async fn update_quote_line_items() -> Result<()> {
     };
 
     let update_builder = QuoteBuilder {
-        contact: ContactIdentifier::ID(contact_id),
+        contact: Some(ContactIdentifier::ID(contact_id)),
         date: date!(2024 - 01 - 15),
         expiry_date: Some(date!(2024 - 02 - 28)), // Extended expiry
         line_items: vec![new_line_item_1, new_line_item_2],
@@ -632,7 +632,7 @@ async fn quote_status_transitions() -> Result<()> {
     };
 
     let quote_builder = QuoteBuilder {
-        contact: ContactIdentifier::ID(contact_id),
+        contact: Some(ContactIdentifier::ID(contact_id)),
         date: date!(2024 - 01 - 15),
         expiry_date: Some(date!(2024 - 02 - 15)),
         line_items: vec![line_item.clone()],
@@ -665,7 +665,7 @@ async fn quote_status_transitions() -> Result<()> {
 
     // Transition Draft -> Sent
     let sent_builder = QuoteBuilder {
-        contact: ContactIdentifier::ID(contact_id),
+        contact: Some(ContactIdentifier::ID(contact_id)),
         date: date!(2024 - 01 - 15),
         expiry_date: Some(date!(2024 - 02 - 15)),
         line_items: vec![line_item],
@@ -802,7 +802,7 @@ async fn update_quote_number_prefix() -> Result<()> {
     };
 
     let quote_builder = QuoteBuilder {
-        contact: ContactIdentifier::ID(contact_id),
+        contact: Some(ContactIdentifier::ID(contact_id)),
         date: date!(2024 - 01 - 15),
         expiry_date: Some(date!(2024 - 02 - 15)),
         line_items: vec![line_item.clone()],
@@ -834,7 +834,7 @@ async fn update_quote_number_prefix() -> Result<()> {
     let new_quote_number = format!("F-{}", original_number);
 
     let update_builder = QuoteBuilder {
-        contact: ContactIdentifier::ID(contact_id),
+        contact: Some(ContactIdentifier::ID(contact_id)),
         date: date!(2024 - 01 - 15),
         expiry_date: Some(date!(2024 - 02 - 15)),
         line_items: vec![line_item],

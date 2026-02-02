@@ -218,7 +218,8 @@ impl ListParameters {
 #[serde(rename_all = "PascalCase")]
 pub struct QuoteBuilder {
     /// The contact the quote is for
-    pub contact: ContactIdentifier,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contact: Option<ContactIdentifier>,
 
     /// The quote date
     #[serde(with = "xero_date_format")]

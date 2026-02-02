@@ -102,7 +102,7 @@ async fn test_line_item_with_discount_amount() -> Result<()> {
 
     let invoice_builder = Builder {
         r#type: Type::AccountsReceivable,
-        contact: ContactIdentifier::ID(contact_id),
+        contact: Some(ContactIdentifier::ID(contact_id)),
         line_items: vec![line_item_with_discount_rate, line_item_with_discount_amount],
         date: Some(today),
         due_date: Some(due_date),

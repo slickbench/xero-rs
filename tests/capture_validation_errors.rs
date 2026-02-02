@@ -55,7 +55,7 @@ async fn capture_quote_validation_error_missing_contact() -> Result<()> {
 
     // Create a valid quote first
     let quote_builder = QuoteBuilder {
-        contact: ContactIdentifier::ID(contact_id),
+        contact: Some(ContactIdentifier::ID(contact_id)),
         date: date!(2024 - 01 - 01),
         expiry_date: None,
         line_items: vec![],
@@ -79,7 +79,7 @@ async fn capture_quote_validation_error_missing_contact() -> Result<()> {
 
         // Now try to update it with an invalid contact ID - should trigger validation error
         let invalid_update = QuoteBuilder {
-            contact: ContactIdentifier::ID(Uuid::nil()), // Invalid contact!
+            contact: Some(ContactIdentifier::ID(Uuid::nil())), // Invalid contact!
             date: date!(2024 - 01 - 01),
             expiry_date: None,
             line_items: vec![],
@@ -166,8 +166,8 @@ async fn capture_quote_validation_multiple_errors() -> Result<()> {
 
     // Try to create a quote with invalid data - should trigger validation errors
     let invalid_quote = QuoteBuilder {
-        contact: ContactIdentifier::ID(Uuid::nil()), // Invalid contact
-        date: date!(1900 - 01 - 01),                 // Very old date might be invalid
+        contact: Some(ContactIdentifier::ID(Uuid::nil())), // Invalid contact
+        date: date!(1900 - 01 - 01),                       // Very old date might be invalid
         expiry_date: None,
         line_items: vec![], // No line items might be invalid
         line_amount_types: LineAmountType::Exclusive,

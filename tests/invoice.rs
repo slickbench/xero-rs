@@ -146,7 +146,7 @@ async fn create_update_invoice() -> Result<()> {
     // Create an invoice
     let invoice_builder = Builder {
         r#type: Type::AccountsReceivable,
-        contact: ContactIdentifier::ID(contact_id),
+        contact: Some(ContactIdentifier::ID(contact_id)),
         line_items: vec![line_item],
         date: Some(date!(2023 - 10 - 01)),
         due_date: Some(date!(2023 - 10 - 31)),
@@ -171,7 +171,7 @@ async fn create_update_invoice() -> Result<()> {
     // Now update it
     let updated_builder = Builder {
         r#type: Type::AccountsReceivable,
-        contact: ContactIdentifier::ID(contact_id),
+        contact: Some(ContactIdentifier::ID(contact_id)),
         line_items: vec![line_item_for_update],
         date: Some(date!(2023 - 10 - 01)),
         due_date: Some(date!(2023 - 11 - 15)), // Extended due date

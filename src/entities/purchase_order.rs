@@ -102,16 +102,11 @@ pub(crate) struct ListResponse {
     pub purchase_orders: Vec<PurchaseOrder>,
 }
 
-impl Default for ContactIdentifier {
-    fn default() -> Self {
-        Self::ID(Uuid::new_v4())
-    }
-}
-
 #[derive(Default, Debug, Serialize, Clone)]
 #[serde(rename_all = "PascalCase")]
 pub struct Builder {
-    pub contact: ContactIdentifier,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub contact: Option<ContactIdentifier>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub line_items: Vec<line_item::Builder>,
     #[serde(
@@ -159,7 +154,7 @@ impl Builder {
     #[must_use]
     pub fn new(contact: ContactIdentifier, line_items: Vec<line_item::Builder>) -> Self {
         Self {
-            contact,
+            contact: Some(contact),
             line_items,
             ..Default::default()
         }
@@ -216,5 +211,35 @@ mod tests {
             Some(contact_id_str.as_str())
         );
         assert!(!order.contains_key("Reference"));
+    }
+
+    #[test]
+    fn builder_default_omits_contact_for_partial_updates() {
+        // This tests that Builder::default() can be used for partial updates
+        // without accidentally including a contact field
+        let mut builder = Builder::default();
+        builder.reference = Some("Updated reference".to_string());
+        builder.purchase_order_id = Some(Uuid::nil());
+
+        let request = PurchaseOrdersRequest::single(&builder);
+        let json = serde_json::to_value(&request).expect("serialization should succeed");
+
+        let orders = json
+            .get("PurchaseOrders")
+            .and_then(Value::as_array)
+            .expect("PurchaseOrders array expected");
+        let order = orders[0].as_object().expect("order object expected");
+
+        // Contact should be omitted when None
+        assert!(
+            !order.contains_key("Contact"),
+            "Contact should not be serialized when None"
+        );
+        // But Reference and PurchaseOrderID should be present
+        assert_eq!(
+            order.get("Reference").and_then(Value::as_str),
+            Some("Updated reference")
+        );
+        assert!(order.contains_key("PurchaseOrderID"));
     }
 }
