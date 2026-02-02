@@ -161,9 +161,9 @@ impl fmt::Display for OAuth2ErrorResponse {
 /// # ValidationException
 /// The most common error type, returned when validation fails on submitted entities.
 ///
-/// **Breaking Change (v0.2.0-alpha.4):** The `elements` field no longer uses `#[serde(default)]`.
-/// If the API returns a ValidationException without an Elements array, deserialization will now fail
-/// instead of silently defaulting to an empty vector. This improves error visibility.
+/// **Note (v0.2.0-alpha.4 → v0.2.0-alpha.14):** The `elements` field uses `#[serde(default)]`
+/// to handle API inconsistencies. Some Xero APIs (like payroll) return ValidationException
+/// without an Elements array, so it defaults to an empty vector when not present.
 ///
 /// ## Example Response
 /// ```json
@@ -187,10 +187,10 @@ pub enum ErrorType {
     /// Validation error with details about which entity fields failed validation.
     ///
     /// # Fields
-    /// - `elements`: Array of validation errors per entity. **No longer defaults to empty array** - missing Elements will cause deserialization error.
+    /// - `elements`: Array of validation errors per entity. Defaults to empty array if not present (some Xero APIs like payroll omit this field).
     /// - `timesheets`: Optional timesheet-specific validation errors (defaults to None).
     ValidationException {
-        #[serde(rename = "Elements")]
+        #[serde(rename = "Elements", default)]
         elements: Vec<ValidationExceptionElement>,
         #[serde(rename = "Timesheets", default)]
         timesheets: Option<Vec<TimesheetValidationError>>,

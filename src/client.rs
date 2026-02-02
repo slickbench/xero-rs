@@ -1175,7 +1175,16 @@ impl Client {
 
                             Err(Error::API(api_error))
                         }
-                        Err(e) => Err(handle_deserialize_error(e)),
+                        Err(e) => {
+                            tracing::error!(
+                                url = %url,
+                                status = %status,
+                                parse_error = %e,
+                                raw_response = %text,
+                                "Failed to parse Xero error response - raw body logged for debugging"
+                            );
+                            Err(handle_deserialize_error(e))
+                        }
                     }
                 }
                 _ => match serde_json::from_str::<error::Response>(&text) {
