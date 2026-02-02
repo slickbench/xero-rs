@@ -481,6 +481,21 @@ impl Client {
             .header(header::ACCEPT, "application/json")
     }
 
+    /// Send a request with optional concurrency limiting.
+    ///
+    /// The permit is held only during the HTTP request, not during retry waits.
+    async fn send_with_concurrency_limit(
+        &self,
+        request: RequestBuilder,
+    ) -> std::result::Result<reqwest::Response, reqwest::Error> {
+        if let Some(semaphore) = &self.concurrency_limiter {
+            let _permit = semaphore.acquire().await.expect("semaphore closed");
+            request.send().await
+        } else {
+            request.send().await
+        }
+    }
+
     /// Get the current rate limit information
     pub async fn rate_limit_info(&self) -> RateLimitInfo {
         self.token_state.read().await.rate_limit_info.clone()
@@ -595,8 +610,8 @@ impl Client {
                 }
             }
 
-            // Execute the request
-            let response = request.send().await;
+            // Execute the request with concurrency limiting
+            let response = self.send_with_concurrency_limit(request).await;
 
             match response {
                 Ok(response) => {
@@ -640,13 +655,12 @@ impl Client {
         }
 
         loop {
-            // Build and execute the request
-            let response = self
+            // Build and execute the request with concurrency limiting
+            let request = self
                 .build_request(Method::POST, url.clone())
                 .await
-                .json(body)
-                .send()
-                .await;
+                .json(body);
+            let response = self.send_with_concurrency_limit(request).await;
 
             match response {
                 Ok(response) => {
@@ -681,13 +695,12 @@ impl Client {
         let mut token_refreshed = false;
 
         loop {
-            // Build and execute the request
-            let response = self
+            // Build and execute the request with concurrency limiting
+            let request = self
                 .build_request(Method::PUT, url.clone())
                 .await
-                .json(body)
-                .send()
-                .await;
+                .json(body);
+            let response = self.send_with_concurrency_limit(request).await;
 
             match response {
                 Ok(response) => {
@@ -718,12 +731,9 @@ impl Client {
         let mut token_refreshed = false;
 
         loop {
-            // Build and execute the request
-            let response = self
-                .build_request(Method::DELETE, url.clone())
-                .await
-                .send()
-                .await;
+            // Build and execute the request with concurrency limiting
+            let request = self.build_request(Method::DELETE, url.clone()).await;
+            let response = self.send_with_concurrency_limit(request).await;
 
             match response {
                 Ok(response) => {

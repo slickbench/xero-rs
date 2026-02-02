@@ -14,6 +14,7 @@ use uuid::Uuid;
 /// - **Minute limit**: 60 calls per minute per tenant
 /// - **Daily limit**: 5000 calls per day per tenant
 /// - **App minute limit**: 10,000 calls per minute across all tenants
+/// - **Concurrent limit**: 5 concurrent requests per organization
 ///
 /// This enum is populated from the `X-Rate-Limit-Problem` response header.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -24,6 +25,8 @@ pub enum RateLimitType {
     Daily,
     /// App-wide minute limit exceeded (10,000 calls/minute across all tenants)
     AppMinute,
+    /// Per-organization concurrent request limit exceeded (5 concurrent requests)
+    Concurrent,
     /// Unknown or unrecognized limit type
     Unknown(String),
 }
@@ -36,6 +39,7 @@ impl RateLimitType {
             "minute" => Self::Minute,
             "daily" => Self::Daily,
             "appminute" => Self::AppMinute,
+            "concurrent" => Self::Concurrent,
             other => Self::Unknown(other.to_string()),
         }
     }
@@ -47,6 +51,7 @@ impl fmt::Display for RateLimitType {
             Self::Minute => write!(f, "minute (60 calls/min per tenant)"),
             Self::Daily => write!(f, "daily (5000 calls/day per tenant)"),
             Self::AppMinute => write!(f, "app minute (10000 calls/min across all tenants)"),
+            Self::Concurrent => write!(f, "concurrent (5 concurrent requests per org)"),
             Self::Unknown(s) => write!(f, "unknown ({s})"),
         }
     }
@@ -549,6 +554,7 @@ pub enum Error {
     /// - `Minute`: 60 calls per minute per tenant
     /// - `Daily`: 5000 calls per day per tenant
     /// - `AppMinute`: 10,000 calls per minute across all tenants
+    /// - `Concurrent`: 5 concurrent requests per organization
     #[error("rate limit exceeded ({limit_type}): retry after {retry_after:?}")]
     #[diagnostic(
         code(xero_rs::rate_limit_exceeded),
