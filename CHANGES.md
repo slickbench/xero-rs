@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0-alpha.21] - 2026-02-03
+
+### Changed
+- **Enhanced ValidationException logging**: Now logs full `validation_details` JSON
+  - Previously only logged element count, now includes complete validation error messages
+  - Helps diagnose which specific fields or values are failing Xero validation
+  - Example: `validation_details="[{\"ValidationErrors\":[{\"Message\":\"Email address is invalid\"}]}]"`
+
 ## [0.2.0-alpha.15] - 2026-01-20
 
 ### Added

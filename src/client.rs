@@ -1147,19 +1147,23 @@ impl Client {
                     match serde_json::from_str::<error::Response>(&text) {
                         Ok(api_error) => {
                             // Include ValidationException details in a single log
-                            let (elements_count, has_timesheets, empty_elements) =
+                            let (elements_count, has_timesheets, empty_elements, elements_json) =
                                 if let error::ErrorType::ValidationException {
                                     ref elements,
                                     ref timesheets,
                                 } = api_error.error
                                 {
+                                    // Serialize full elements for debugging
+                                    let json = serde_json::to_string(elements)
+                                        .unwrap_or_else(|_| "failed to serialize".to_string());
                                     (
                                         Some(elements.len()),
                                         timesheets.is_some(),
                                         elements.is_empty(),
+                                        Some(json),
                                     )
                                 } else {
-                                    (None, false, false)
+                                    (None, false, false, None)
                                 };
 
                             tracing::error!(
@@ -1168,6 +1172,7 @@ impl Client {
                                 error_number = ?api_error.error_number,
                                 message = ?api_error.message,
                                 validation_elements = ?elements_count,
+                                validation_details = ?elements_json,
                                 has_timesheets = has_timesheets,
                                 empty_elements = empty_elements,
                                 "API error response from Xero"
