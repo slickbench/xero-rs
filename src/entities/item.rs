@@ -1,6 +1,7 @@
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
+use tracing_error::SpanTrace;
 use uuid::Uuid;
 
 use crate::{
@@ -380,6 +381,7 @@ impl Item {
             url: endpoint_str,
             status_code: reqwest::StatusCode::NOT_FOUND,
             response_body: Some(format!("Item with code {code} not found")),
+            span_trace: SpanTrace::capture(),
         })
     }
 }
@@ -419,6 +421,7 @@ pub async fn create(client: &Client, items: &[Builder]) -> Result<Vec<Item>> {
         url: ENDPOINT.to_string(),
         status_code: reqwest::StatusCode::NOT_FOUND,
         response_body: Some("No items returned in response".to_string()),
+        span_trace: SpanTrace::capture(),
     })
 }
 
@@ -430,6 +433,7 @@ pub async fn create_single(client: &Client, item: &Builder) -> Result<Item> {
         url: ENDPOINT.to_string(),
         status_code: reqwest::StatusCode::NOT_FOUND,
         response_body: Some("No item returned in response".to_string()),
+        span_trace: SpanTrace::capture(),
     })
 }
 
@@ -448,6 +452,7 @@ pub async fn update_or_create(client: &Client, items: &[Builder]) -> Result<Vec<
         url: ENDPOINT.to_string(),
         status_code: reqwest::StatusCode::NOT_FOUND,
         response_body: Some("No items returned in response".to_string()),
+        span_trace: SpanTrace::capture(),
     })
 }
 
@@ -472,6 +477,7 @@ pub async fn update(client: &Client, item_id: Uuid, item: &Builder) -> Result<It
             url: format!("{ENDPOINT}{item_id}"),
             status_code: reqwest::StatusCode::NOT_FOUND,
             response_body: Some("No item returned in response".to_string()),
+            span_trace: SpanTrace::capture(),
         })
 }
 

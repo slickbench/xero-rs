@@ -89,11 +89,12 @@ async fn example_without_auto_refresh() -> Result<()> {
         Ok(invoices) => {
             info!("Found {} invoices", invoices.len());
         }
-        Err(xero_rs::error::Error::API(api_err))
-            if matches!(
-                api_err.error,
-                xero_rs::error::ErrorType::UnauthorisedException
-            ) =>
+        Err(xero_rs::error::Error::API {
+            response: api_err, ..
+        }) if matches!(
+            api_err.error,
+            xero_rs::error::ErrorType::UnauthorisedException
+        ) =>
         {
             // Token expired, manually refresh
             warn!("Token expired, manually refreshing...");

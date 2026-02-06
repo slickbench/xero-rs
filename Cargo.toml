@@ -1,6 +1,6 @@
 [package]
 name = "xero-rs"
-version = "0.2.0-alpha.21"
+version = "0.2.0-alpha.22"
 edition = "2024"
 description = "A Xero API client library for Rust"
 license-file = "LICENSE"
@@ -31,12 +31,20 @@ rust_decimal = "1"
 
 # Tracing
 tracing = "0.1"
+tracing-error = "0.2"
 
 # Errors
 thiserror = "2"
 miette = { version = "7" }
 tokio = { version = "1", features = ["time", "macros"] }
 tokio-retry = "0.3.0"
+
+# Optional Sentry integration
+sentry-core = { version = "0.34", optional = true, default-features = false }
+
+[features]
+default = []
+sentry = ["dep:sentry-core"]
 
 [dev-dependencies]
 rust_decimal_macros = "1.15"

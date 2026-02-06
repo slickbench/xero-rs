@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
+use tracing_error::SpanTrace;
 use uuid::Uuid;
 
 use crate::{
@@ -470,6 +471,7 @@ pub async fn create(client: &Client, account: &Builder) -> Result<Account> {
             url: ENDPOINT.to_string(),
             status_code: reqwest::StatusCode::NOT_FOUND,
             response_body: Some("No account returned in response".to_string()),
+            span_trace: SpanTrace::capture(),
         })
 }
 
@@ -494,6 +496,7 @@ pub async fn update(client: &Client, account_id: Uuid, account: &Builder) -> Res
             url: format!("{ENDPOINT}{account_id}"),
             status_code: reqwest::StatusCode::NOT_FOUND,
             response_body: Some("No account returned in response".to_string()),
+            span_trace: SpanTrace::capture(),
         })
 }
 
@@ -547,6 +550,7 @@ pub async fn get_attachment(
             response_body: Some(format!(
                 "Failed to retrieve attachment for account with ID {account_id}"
             )),
+            span_trace: SpanTrace::capture(),
         })
     }
 }
@@ -612,6 +616,7 @@ pub async fn upload_attachment(
                 url: endpoint.to_string(),
                 status_code: status,
                 response_body: Some("No attachment was returned after upload".to_string()),
+                span_trace: SpanTrace::capture(),
             })
     } else {
         Err(Error::NotFound {
@@ -621,6 +626,7 @@ pub async fn upload_attachment(
             response_body: Some(format!(
                 "Failed to upload attachment for account with ID {account_id}"
             )),
+            span_trace: SpanTrace::capture(),
         })
     }
 }

@@ -6,6 +6,7 @@ use miette::{Diagnostic, SourceSpan};
 use oauth2::HttpClientError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use tracing_error::SpanTrace;
 use uuid::Uuid;
 
 /// The type of rate limit that was exceeded.
@@ -443,12 +444,17 @@ fn format_oauth2_error(
 /// Errors that can occur when interacting with the Xero API.
 #[derive(Debug, Error, Diagnostic)]
 pub enum Error {
-    #[error("error making request: {0:?}")]
+    #[error("error making request: {source:?}")]
     #[diagnostic(
         code(xero_rs::request_error),
         help("Check your network connection and Xero API availability")
     )]
-    Request(#[source] reqwest::Error),
+    Request {
+        #[source]
+        source: reqwest::Error,
+        /// Captured span trace for async context
+        span_trace: SpanTrace,
+    },
 
     #[error("invalid filename")]
     #[diagnostic(
@@ -502,6 +508,8 @@ pub enum Error {
         url: String,
         /// Status code for display
         status_code: String,
+        /// Captured span trace for async context
+        span_trace: SpanTrace,
     },
 
     #[error("object not found: {entity} (url: {url})")]
@@ -514,6 +522,8 @@ pub enum Error {
         url: String,
         status_code: reqwest::StatusCode,
         response_body: Option<String>,
+        /// Captured span trace for async context
+        span_trace: SpanTrace,
     },
 
     #[error("endpoint could not be parsed as a URL")]
@@ -524,12 +534,16 @@ pub enum Error {
     InvalidEndpoint,
 
     /// A standard error returned while interacting with the API such as a `ValidationException`.
-    #[error("{0}")]
+    #[error("{response}")]
     #[diagnostic(
         code(xero_rs::api_validation),
         help("Review the validation errors returned by the Xero API")
     )]
-    API(Response),
+    API {
+        response: Response,
+        /// Captured span trace for async context
+        span_trace: SpanTrace,
+    },
 
     /// An error returned when the user is forbidden by something like an unsuccessful
     /// authentication.
@@ -570,6 +584,8 @@ pub enum Error {
         status_code: reqwest::StatusCode,
         url: String,
         response_body: Option<String>,
+        /// Captured span trace for async context
+        span_trace: SpanTrace,
     },
 }
 
@@ -619,6 +635,7 @@ impl Error {
             method: method.to_string(),
             url,
             status_code: status_code.to_string(),
+            span_trace: SpanTrace::capture(),
         }
     }
 
@@ -666,11 +683,60 @@ impl Error {
             _ => None,
         }
     }
+
+    /// Get the span trace for errors that capture it.
+    ///
+    /// The span trace provides async context showing the call stack
+    /// at the point the error was created. This is especially useful
+    /// for debugging with Sentry when used with `tracing-error::ErrorLayer`.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use tracing_subscriber::prelude::*;
+    /// use tracing_error::ErrorLayer;
+    ///
+    /// // Set up tracing subscriber with ErrorLayer
+    /// tracing_subscriber::registry()
+    ///     .with(tracing_subscriber::fmt::layer())
+    ///     .with(ErrorLayer::default())
+    ///     .init();
+    ///
+    /// // Errors will now include span traces
+    /// if let Err(e) = client.contacts().list().await {
+    ///     if let Some(trace) = e.span_trace() {
+    ///         eprintln!("Span trace:\n{}", trace);
+    ///     }
+    /// }
+    /// ```
+    #[must_use]
+    pub fn span_trace(&self) -> Option<&SpanTrace> {
+        match self {
+            Self::Request { span_trace, .. } => Some(span_trace),
+            Self::DeserializationError { span_trace, .. } => Some(span_trace),
+            Self::NotFound { span_trace, .. } => Some(span_trace),
+            Self::API { span_trace, .. } => Some(span_trace),
+            Self::RateLimitExceeded { span_trace, .. } => Some(span_trace),
+            _ => None,
+        }
+    }
+
+    /// Get the API response for API errors.
+    #[must_use]
+    pub fn api_response(&self) -> Option<&Response> {
+        match self {
+            Self::API { response, .. } => Some(response),
+            _ => None,
+        }
+    }
 }
 
 impl From<reqwest::Error> for Error {
-    fn from(e: reqwest::Error) -> Self {
-        Self::Request(e)
+    fn from(source: reqwest::Error) -> Self {
+        Self::Request {
+            source,
+            span_trace: SpanTrace::capture(),
+        }
     }
 }
 
@@ -693,6 +759,7 @@ impl From<serde_json::Error> for Error {
             ),
             response_body: String::new(),
             source: e,
+            span_trace: SpanTrace::capture(),
         }
     }
 }

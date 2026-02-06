@@ -72,7 +72,10 @@ async fn capture_quote_validation_error_missing_contact() -> Result<()> {
     };
 
     // Create the quote
-    let created_quote = client.quotes().create(&quote_builder).await;
+    let created_quote = client
+        .quotes()
+        .create(&quote_builder, &xero_rs::MutationOptions::default())
+        .await;
 
     if let Ok(created_quote) = created_quote {
         info!("Created quote with ID: {}", created_quote.quote_id);
@@ -100,7 +103,11 @@ async fn capture_quote_validation_error_missing_contact() -> Result<()> {
             .update(created_quote.quote_id, &invalid_update)
             .await;
 
-        if let Err(Error::API(api_error)) = result {
+        if let Err(Error::API {
+            response: api_error,
+            ..
+        }) = result
+        {
             if let xero_rs::error::ErrorType::ValidationException { .. } = api_error.error {
                 if let Ok(json) = serde_json::to_string_pretty(&api_error) {
                     save_fixture("quote_validation_missing_contact", &json)?;
@@ -141,7 +148,11 @@ async fn capture_purchase_order_validation_error() -> Result<()> {
 
     let result = client.purchase_orders().create(&po_builder).await;
 
-    if let Err(Error::API(api_error)) = result {
+    if let Err(Error::API {
+        response: api_error,
+        ..
+    }) = result
+    {
         if let xero_rs::error::ErrorType::ValidationException { .. } = api_error.error {
             if let Ok(json) = serde_json::to_string_pretty(&api_error) {
                 save_fixture("purchase_order_validation_missing_contact", &json)?;
@@ -182,9 +193,16 @@ async fn capture_quote_validation_multiple_errors() -> Result<()> {
         status: None,
     };
 
-    let result = client.quotes().create(&invalid_quote).await;
+    let result = client
+        .quotes()
+        .create(&invalid_quote, &xero_rs::MutationOptions::default())
+        .await;
 
-    if let Err(Error::API(api_error)) = result {
+    if let Err(Error::API {
+        response: api_error,
+        ..
+    }) = result
+    {
         if let xero_rs::error::ErrorType::ValidationException { .. } = api_error.error {
             if let Ok(json) = serde_json::to_string_pretty(&api_error) {
                 save_fixture("quote_validation_multiple_errors", &json)?;

@@ -37,6 +37,7 @@ use crate::payroll::{
     },
 };
 use crate::scope::Scope;
+use tracing_error::SpanTrace;
 
 const XERO_AUTH_URL: &str = "https://login.xero.com/identity/connect/authorize";
 const XERO_TOKEN_URL: &str = "https://identity.xero.com/connect/token";
@@ -522,7 +523,9 @@ impl Client {
         attempts: &mut usize,
     ) -> std::result::Result<bool, ()> {
         // Check for token expiry
-        if let Error::API(api_err) = error
+        if let Error::API {
+            response: api_err, ..
+        } = error
             && !*token_refreshed
             && matches!(api_err.error, error::ErrorType::UnauthorisedException)
         {
@@ -771,6 +774,7 @@ impl Client {
                             status_code: status,
                             url: url_str,
                             response_body: Some(text),
+                            span_trace: SpanTrace::capture(),
                         };
 
                         if self
@@ -786,11 +790,20 @@ impl Client {
                     // Try to get error details
                     let content_length = response.content_length().unwrap_or(0);
                     let error = if content_length == 0 {
-                        Error::Request(response.error_for_status().unwrap_err())
+                        Error::Request {
+                            source: response.error_for_status().unwrap_err(),
+                            span_trace: SpanTrace::capture(),
+                        }
                     } else {
                         match response.json::<error::Response>().await {
-                            Ok(api_error) => Error::API(api_error),
-                            Err(e) => Error::Request(e),
+                            Ok(api_error) => Error::API {
+                                response: api_error,
+                                span_trace: SpanTrace::capture(),
+                            },
+                            Err(e) => Error::Request {
+                                source: e,
+                                span_trace: SpanTrace::capture(),
+                            },
                         }
                     };
 
@@ -809,7 +822,14 @@ impl Client {
     }
 
     /// Perform an authenticated `GET` request against the API with automatic retry.
-    #[instrument(skip(self, query))]
+    #[instrument(
+        skip(self, query),
+        fields(
+            tags.http_method = "GET",
+            tags.xero_endpoint = %url.as_ref(),
+            request_id = %Uuid::new_v4(),
+        )
+    )]
     pub async fn get<
         'a,
         R: DeserializeOwned,
@@ -820,7 +840,7 @@ impl Client {
         url: U,
         query: &T,
     ) -> Result<R> {
-        trace!(?query, ?url, "making GET request");
+        trace!(?query, "making GET request");
 
         // Handle relative URLs by prepending the base URL if needed
         let url_str = url.as_ref();
@@ -837,13 +857,20 @@ impl Client {
     }
 
     /// Perform a `GET` request against the API using a typed `XeroEndpoint` with automatic retry.
-    #[instrument(skip(self, query))]
+    #[instrument(
+        skip(self, query),
+        fields(
+            tags.http_method = "GET",
+            tags.xero_endpoint = %endpoint,
+            request_id = %Uuid::new_v4(),
+        )
+    )]
     pub async fn get_endpoint<'a, R: DeserializeOwned, T: Serialize + Sized + fmt::Debug>(
         &self,
         endpoint: XeroEndpoint,
         query: &T,
     ) -> Result<R> {
-        trace!(?query, endpoint = ?endpoint, "making GET request with endpoint");
+        trace!(?query, "making GET request with endpoint");
         let url = endpoint.to_url()?;
         self.execute_get(url, query).await
     }
@@ -879,7 +906,14 @@ impl Client {
     /// # Ok(())
     /// # }
     /// ```
-    #[instrument(skip(self, query))]
+    #[instrument(
+        skip(self, query),
+        fields(
+            tags.http_method = "GET",
+            tags.xero_endpoint = %endpoint,
+            request_id = %Uuid::new_v4(),
+        )
+    )]
     pub async fn get_endpoint_with_modified_since<
         'a,
         R: DeserializeOwned,
@@ -892,7 +926,6 @@ impl Client {
     ) -> Result<R> {
         trace!(
             ?query,
-            endpoint = ?endpoint,
             ?if_modified_since,
             "making GET request with endpoint and If-Modified-Since"
         );
@@ -902,7 +935,14 @@ impl Client {
     }
 
     /// Perform an authenticated `PUT` request against the API with automatic retry.
-    #[instrument(skip(self, data))]
+    #[instrument(
+        skip(self, data),
+        fields(
+            tags.http_method = "PUT",
+            tags.xero_endpoint = %url.as_ref(),
+            request_id = %Uuid::new_v4(),
+        )
+    )]
     pub async fn put<
         'a,
         R: DeserializeOwned,
@@ -913,7 +953,7 @@ impl Client {
         url: U,
         data: &T,
     ) -> Result<R> {
-        trace!(json = ?serde_json::to_string(data).unwrap(), ?url, "making PUT request");
+        trace!(json = ?serde_json::to_string(data).unwrap(), "making PUT request");
 
         // Handle relative URLs by prepending the base URL if needed
         let url_str = url.as_ref();
@@ -930,7 +970,14 @@ impl Client {
     }
 
     /// Perform an authenticated `POST` request against the API with automatic retry.
-    #[instrument(skip(self, data))]
+    #[instrument(
+        skip(self, data),
+        fields(
+            tags.http_method = "POST",
+            tags.xero_endpoint = %url.as_ref(),
+            request_id = %Uuid::new_v4(),
+        )
+    )]
     pub async fn post<
         'a,
         R: DeserializeOwned,
@@ -941,7 +988,7 @@ impl Client {
         url: U,
         data: &T,
     ) -> Result<R> {
-        trace!(json = ?serde_json::to_string(data).unwrap(), ?url, "making POST request");
+        trace!(json = ?serde_json::to_string(data).unwrap(), "making POST request");
 
         // Handle relative URLs by prepending the base URL if needed
         let url_str = url.as_ref();
@@ -958,33 +1005,100 @@ impl Client {
     }
 
     /// Perform a `POST` request against the API using a typed `XeroEndpoint` with automatic retry.
-    #[instrument(skip(self, data))]
+    #[instrument(
+        skip(self, data),
+        fields(
+            tags.http_method = "POST",
+            tags.xero_endpoint = %endpoint,
+            request_id = %Uuid::new_v4(),
+        )
+    )]
     pub async fn post_endpoint<'a, R: DeserializeOwned, T: Serialize + Sized + fmt::Debug>(
         &self,
         endpoint: XeroEndpoint,
         data: &T,
     ) -> Result<R> {
-        trace!(json = ?serde_json::to_string(data).unwrap(), endpoint = ?endpoint, "making POST request with endpoint");
+        trace!(json = ?serde_json::to_string(data).unwrap(), "making POST request with endpoint");
         let url = endpoint.to_url()?;
         self.execute_post(url, data).await
     }
 
+    /// Perform a `POST` request with mutation options (e.g. `unitdp=4`) appended as query parameters.
+    #[instrument(
+        skip(self, data, options),
+        fields(
+            tags.http_method = "POST",
+            tags.xero_endpoint = %endpoint,
+            request_id = %Uuid::new_v4(),
+        )
+    )]
+    pub async fn post_endpoint_with_options<
+        'a,
+        R: DeserializeOwned,
+        T: Serialize + Sized + fmt::Debug,
+    >(
+        &self,
+        endpoint: XeroEndpoint,
+        data: &T,
+        options: &crate::MutationOptions,
+    ) -> Result<R> {
+        trace!(json = ?serde_json::to_string(data).unwrap(), ?options, "making POST request with endpoint and options");
+        let mut url = endpoint.to_url()?;
+        options.apply_to_url(&mut url);
+        self.execute_post(url, data).await
+    }
+
     /// Perform a `PUT` request against the API using a typed `XeroEndpoint` with automatic retry.
-    #[instrument(skip(self, data))]
+    #[instrument(
+        skip(self, data),
+        fields(
+            tags.http_method = "PUT",
+            tags.xero_endpoint = %endpoint,
+            request_id = %Uuid::new_v4(),
+        )
+    )]
     pub async fn put_endpoint<'a, R: DeserializeOwned, T: Serialize + Sized>(
         &self,
         endpoint: XeroEndpoint,
         data: &T,
     ) -> Result<R> {
-        trace!(json = ?serde_json::to_string(data).unwrap(), endpoint = ?endpoint, "making PUT request with endpoint");
+        trace!(json = ?serde_json::to_string(data).unwrap(), "making PUT request with endpoint");
         let url = endpoint.to_url()?;
         self.execute_put(url, data).await
     }
 
+    /// Perform a `PUT` request with mutation options (e.g. `unitdp=4`) appended as query parameters.
+    #[instrument(
+        skip(self, data, options),
+        fields(
+            tags.http_method = "PUT",
+            tags.xero_endpoint = %endpoint,
+            request_id = %Uuid::new_v4(),
+        )
+    )]
+    pub async fn put_endpoint_with_options<'a, R: DeserializeOwned, T: Serialize + Sized>(
+        &self,
+        endpoint: XeroEndpoint,
+        data: &T,
+        options: &crate::MutationOptions,
+    ) -> Result<R> {
+        trace!(json = ?serde_json::to_string(data).unwrap(), ?options, "making PUT request with endpoint and options");
+        let mut url = endpoint.to_url()?;
+        options.apply_to_url(&mut url);
+        self.execute_put(url, data).await
+    }
+
     /// Perform an authenticated `DELETE` request against the API with automatic retry.
-    #[instrument(skip(self))]
+    #[instrument(
+        skip(self),
+        fields(
+            tags.http_method = "DELETE",
+            tags.xero_endpoint = %url.as_ref(),
+            request_id = %Uuid::new_v4(),
+        )
+    )]
     pub async fn delete<U: AsRef<str> + fmt::Debug + Clone>(&self, url: U) -> Result<()> {
-        trace!(?url, "making DELETE request");
+        trace!("making DELETE request");
 
         // Handle relative URLs by prepending the base URL if needed
         let url_str = url.as_ref();
@@ -1001,9 +1115,16 @@ impl Client {
     }
 
     /// Perform a `DELETE` request against the API using a typed `XeroEndpoint` with automatic retry.
-    #[instrument(skip(self))]
+    #[instrument(
+        skip(self),
+        fields(
+            tags.http_method = "DELETE",
+            tags.xero_endpoint = %endpoint,
+            request_id = %Uuid::new_v4(),
+        )
+    )]
     pub async fn delete_endpoint(&self, endpoint: XeroEndpoint) -> Result<()> {
-        trace!(endpoint = ?endpoint, "making DELETE request with endpoint");
+        trace!("making DELETE request with endpoint");
         let url = endpoint.to_url()?;
         self.execute_delete(url).await
     }
@@ -1079,6 +1200,7 @@ impl Client {
                 status_code: status,
                 url,
                 response_body: Some(text),
+                span_trace: SpanTrace::capture(),
             });
         }
 
@@ -1118,12 +1240,16 @@ impl Client {
                 url,
                 status_code: status,
                 response_body: Some(text),
+                span_trace: SpanTrace::capture(),
             }),
             StatusCode::UNAUTHORIZED => {
                 let mut body = serde_json::from_str::<serde_json::Value>(&text).unwrap_or_default();
                 body["Type"] = "UnauthorisedException".into();
                 match serde_json::from_value::<error::Response>(body) {
-                    Ok(api_error) => Err(Error::API(api_error)),
+                    Ok(api_error) => Err(Error::API {
+                        response: api_error,
+                        span_trace: SpanTrace::capture(),
+                    }),
                     Err(e) => {
                         tracing::error!(
                             url = %url,
@@ -1178,7 +1304,10 @@ impl Client {
                                 "API error response from Xero"
                             );
 
-                            Err(Error::API(api_error))
+                            Err(Error::API {
+                                response: api_error,
+                                span_trace: SpanTrace::capture(),
+                            })
                         }
                         Err(e) => {
                             tracing::error!(
@@ -1193,7 +1322,10 @@ impl Client {
                     }
                 }
                 _ => match serde_json::from_str::<error::Response>(&text) {
-                    Ok(api_error) => Err(Error::API(api_error)),
+                    Ok(api_error) => Err(Error::API {
+                        response: api_error,
+                        span_trace: SpanTrace::capture(),
+                    }),
                     Err(e) => {
                         tracing::error!(
                             url = %url,
@@ -1380,6 +1512,7 @@ impl ContactsApi<'_> {
             url: endpoint.to_string(),
             status_code: reqwest::StatusCode::NOT_FOUND,
             response_body: Some(format!("Contact with ID {contact_id} not found")),
+            span_trace: SpanTrace::capture(),
         })
     }
 }
@@ -1421,55 +1554,39 @@ impl InvoicesApi<'_> {
             url: endpoint.to_string(),
             status_code: reqwest::StatusCode::NOT_FOUND,
             response_body: Some(format!("Invoice with ID {invoice_id} not found")),
+            span_trace: SpanTrace::capture(),
         })
     }
 
     /// Create a new invoice
-    #[instrument(skip(self, invoice))]
-    pub async fn create(&self, invoice: &invoice::Builder) -> Result<Invoice> {
-        // Create a request wrapper
-        #[derive(Serialize, Debug)]
-        #[serde(rename_all = "PascalCase")]
-        struct InvoiceWrapper<'a> {
-            invoices: Vec<&'a invoice::Builder>,
-        }
-
-        let request = InvoiceWrapper {
-            invoices: vec![invoice],
-        };
-
-        let response: MutationResponse = self
-            .client
-            .put_endpoint(XeroEndpoint::Invoices, &request)
-            .await?;
-
-        // Extract invoice from response
-        response
-            .data
-            .get_invoices()
-            .and_then(|invoices| invoices.into_iter().next())
-            .ok_or(Error::NotFound {
-                entity: "Invoice".to_string(),
-                url: XeroEndpoint::Invoices.to_string(),
-                status_code: reqwest::StatusCode::NOT_FOUND,
-                response_body: Some("No invoice returned in response".to_string()),
-            })
+    #[instrument(skip(self, invoice, options))]
+    pub async fn create(
+        &self,
+        invoice: &invoice::Builder,
+        options: &crate::MutationOptions,
+    ) -> Result<Invoice> {
+        invoice::create(self.client, invoice, options).await
     }
 
     /// Update an existing invoice
-    #[instrument(skip(self, invoice))]
+    #[instrument(skip(self, invoice, options))]
     pub async fn update(
         &mut self,
         invoice_id: Uuid,
         invoice: &invoice::Builder,
+        options: &crate::MutationOptions,
     ) -> Result<Invoice> {
-        invoice::update(self.client, invoice_id, invoice).await
+        invoice::update(self.client, invoice_id, invoice, options).await
     }
 
     /// Update or create an invoice
-    #[instrument(skip(self, invoice))]
-    pub async fn update_or_create(&self, invoice: &invoice::Builder) -> Result<Invoice> {
-        invoice::update_or_create(self.client, invoice).await
+    #[instrument(skip(self, invoice, options))]
+    pub async fn update_or_create(
+        &self,
+        invoice: &invoice::Builder,
+        options: &crate::MutationOptions,
+    ) -> Result<Invoice> {
+        invoice::update_or_create(self.client, invoice, options).await
     }
 
     /// Get the invoice as a PDF
@@ -1593,6 +1710,7 @@ impl PurchaseOrdersApi<'_> {
                 response_body: Some(format!(
                     "Purchase Order with ID {purchase_order_id} not found"
                 )),
+                span_trace: SpanTrace::capture(),
             })
     }
 
@@ -1612,6 +1730,7 @@ impl PurchaseOrdersApi<'_> {
                 response_body: Some(
                     "Failed to create purchase order - no purchase order in response".to_string(),
                 ),
+                span_trace: SpanTrace::capture(),
             })
     }
 
@@ -1636,6 +1755,7 @@ impl PurchaseOrdersApi<'_> {
                 response_body: Some(
                     "Failed to update purchase order - no purchase order in response".to_string(),
                 ),
+                span_trace: SpanTrace::capture(),
             })
     }
 }
@@ -1666,21 +1786,34 @@ impl QuotesApi<'_> {
     }
 
     /// Create a new quote
-    #[instrument(skip(self, quote))]
-    pub async fn create(&self, quote: &quote::QuoteBuilder) -> Result<Quote> {
-        quote::create(self.client, quote).await
+    #[instrument(skip(self, quote, options))]
+    pub async fn create(
+        &self,
+        quote: &quote::QuoteBuilder,
+        options: &crate::MutationOptions,
+    ) -> Result<Quote> {
+        quote::create(self.client, quote, options).await
     }
 
     /// Update or create a quote
-    #[instrument(skip(self, quote))]
-    pub async fn update_or_create(&self, quote: &quote::QuoteBuilder) -> Result<Quote> {
-        quote::update_or_create(self.client, quote).await
+    #[instrument(skip(self, quote, options))]
+    pub async fn update_or_create(
+        &self,
+        quote: &quote::QuoteBuilder,
+        options: &crate::MutationOptions,
+    ) -> Result<Quote> {
+        quote::update_or_create(self.client, quote, options).await
     }
 
     /// Update a specific quote
-    #[instrument(skip(self, quote))]
-    pub async fn update(&self, quote_id: Uuid, quote: &quote::QuoteBuilder) -> Result<Quote> {
-        quote::update(self.client, quote_id, quote).await
+    #[instrument(skip(self, quote, options))]
+    pub async fn update(
+        &self,
+        quote_id: Uuid,
+        quote: &quote::QuoteBuilder,
+        options: &crate::MutationOptions,
+    ) -> Result<Quote> {
+        quote::update(self.client, quote_id, quote, options).await
     }
 
     /// Get the history records for a quote
@@ -1890,6 +2023,7 @@ impl PayCalendarsApi<'_> {
                 url,
                 status_code: StatusCode::NOT_FOUND,
                 response_body: Some(format!("Pay Calendar with ID {pay_calendar_id} not found")),
+                span_trace: SpanTrace::capture(),
             });
         }
 
@@ -1925,6 +2059,7 @@ impl PayCalendarsApi<'_> {
                 url: url.to_string(),
                 status_code: StatusCode::OK,
                 response_body: Some("No pay calendar was returned after creation".to_string()),
+                span_trace: SpanTrace::capture(),
             });
         }
 
@@ -1984,6 +2119,7 @@ impl ItemsApi<'_> {
             url: item::ENDPOINT.to_string(),
             status_code: reqwest::StatusCode::NOT_FOUND,
             response_body: Some("No item returned in response".to_string()),
+            span_trace: SpanTrace::capture(),
         })
     }
 

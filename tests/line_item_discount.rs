@@ -112,7 +112,11 @@ async fn test_line_item_with_discount_amount() -> Result<()> {
     };
 
     // Create the invoice
-    match client.invoices().create(&invoice_builder).await {
+    match client
+        .invoices()
+        .create(&invoice_builder, &xero_rs::MutationOptions::default())
+        .await
+    {
         Ok(invoice) => {
             info!(
                 "Created invoice with discount amounts: {}",

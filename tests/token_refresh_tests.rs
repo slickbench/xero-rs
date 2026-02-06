@@ -118,7 +118,11 @@ async fn test_without_auto_refresh_fails() -> Result<()> {
     );
 
     // Verify it's an unauthorized error
-    if let Err(xero_rs::error::Error::API(ref api_err)) = invoices2 {
+    if let Err(xero_rs::error::Error::API {
+        response: ref api_err,
+        ..
+    }) = invoices2
+    {
         assert!(
             matches!(
                 api_err.error,

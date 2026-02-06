@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::ffi::OsStr;
 use std::path::Path;
 use time::Date;
+use tracing_error::SpanTrace;
 use uuid::Uuid;
 
 use crate::{
@@ -376,17 +377,24 @@ pub async fn get(client: &Client, quote_id: Uuid) -> Result<Quote> {
         url: endpoint_clone.to_string(),
         status_code: reqwest::StatusCode::NOT_FOUND,
         response_body: Some(format!("Quote with ID {quote_id} not found")),
+        span_trace: SpanTrace::capture(),
     })
 }
 
 /// Create one or more quotes.
 #[instrument(skip(client, quote))]
-pub async fn create(client: &Client, quote: &QuoteBuilder) -> Result<Quote> {
+pub async fn create(
+    client: &Client,
+    quote: &QuoteBuilder,
+    options: &crate::MutationOptions,
+) -> Result<Quote> {
     let request = QuoteWrapper {
         quotes: vec![quote],
     };
 
-    let response: MutationResponse = client.put_endpoint(XeroEndpoint::Quotes, &request).await?;
+    let response: MutationResponse = client
+        .put_endpoint_with_options(XeroEndpoint::Quotes, &request, options)
+        .await?;
 
     // Extract quote from response
     response
@@ -398,17 +406,24 @@ pub async fn create(client: &Client, quote: &QuoteBuilder) -> Result<Quote> {
             url: XeroEndpoint::Quotes.to_string(),
             status_code: reqwest::StatusCode::NOT_FOUND,
             response_body: Some("No quote returned in response".to_string()),
+            span_trace: SpanTrace::capture(),
         })
 }
 
 /// Update or create one or more quotes.
 #[instrument(skip(client, quote))]
-pub async fn update_or_create(client: &Client, quote: &QuoteBuilder) -> Result<Quote> {
+pub async fn update_or_create(
+    client: &Client,
+    quote: &QuoteBuilder,
+    options: &crate::MutationOptions,
+) -> Result<Quote> {
     let request = QuoteWrapper {
         quotes: vec![quote],
     };
 
-    let response: MutationResponse = client.post_endpoint(XeroEndpoint::Quotes, &request).await?;
+    let response: MutationResponse = client
+        .post_endpoint_with_options(XeroEndpoint::Quotes, &request, options)
+        .await?;
 
     // Extract quote from response
     response
@@ -420,12 +435,18 @@ pub async fn update_or_create(client: &Client, quote: &QuoteBuilder) -> Result<Q
             url: XeroEndpoint::Quotes.to_string(),
             status_code: reqwest::StatusCode::NOT_FOUND,
             response_body: Some("No quote returned in response".to_string()),
+            span_trace: SpanTrace::capture(),
         })
 }
 
 /// Update a specific quote.
 #[instrument(skip(client, quote))]
-pub async fn update(client: &Client, quote_id: Uuid, quote: &QuoteBuilder) -> Result<Quote> {
+pub async fn update(
+    client: &Client,
+    quote_id: Uuid,
+    quote: &QuoteBuilder,
+    options: &crate::MutationOptions,
+) -> Result<Quote> {
     let mut updatable_quote = quote.clone();
     updatable_quote.quote_id = Some(quote_id);
 
@@ -434,7 +455,9 @@ pub async fn update(client: &Client, quote_id: Uuid, quote: &QuoteBuilder) -> Re
     };
 
     let endpoint = XeroEndpoint::Quote(quote_id);
-    let response: MutationResponse = client.post_endpoint(endpoint.clone(), &request).await?;
+    let response: MutationResponse = client
+        .post_endpoint_with_options(endpoint.clone(), &request, options)
+        .await?;
 
     // Extract quote from response
     response
@@ -446,6 +469,7 @@ pub async fn update(client: &Client, quote_id: Uuid, quote: &QuoteBuilder) -> Re
             url: endpoint.to_string(),
             status_code: reqwest::StatusCode::NOT_FOUND,
             response_body: Some(format!("Quote with ID {quote_id} not found")),
+            span_trace: SpanTrace::capture(),
         })
 }
 
@@ -521,6 +545,7 @@ pub async fn get_pdf(client: &Client, quote_id: Uuid) -> Result<Vec<u8>> {
             response_body: Some(format!(
                 "Failed to retrieve PDF for quote with ID {quote_id}"
             )),
+            span_trace: SpanTrace::capture(),
         })
     }
 }
@@ -573,6 +598,7 @@ pub async fn get_attachment(
             response_body: Some(format!(
                 "Failed to retrieve attachment for quote with ID {quote_id}"
             )),
+            span_trace: SpanTrace::capture(),
         })
     }
 }
@@ -610,6 +636,7 @@ pub async fn get_attachment_by_filename(
             response_body: Some(format!(
                 "Failed to retrieve attachment {filename} for quote with ID {quote_id}"
             )),
+            span_trace: SpanTrace::capture(),
         })
     }
 }
@@ -680,6 +707,7 @@ pub async fn upload_attachment(
                 url: endpoint.to_string(),
                 status_code: status,
                 response_body: Some("No attachment was returned after upload".to_string()),
+                span_trace: SpanTrace::capture(),
             })
     } else {
         Err(Error::NotFound {
@@ -689,6 +717,7 @@ pub async fn upload_attachment(
             response_body: Some(format!(
                 "Failed to upload attachment for quote with ID {quote_id}"
             )),
+            span_trace: SpanTrace::capture(),
         })
     }
 }
@@ -759,6 +788,7 @@ pub async fn update_attachment(
                 url: endpoint.to_string(),
                 status_code: status,
                 response_body: Some("No attachment was returned after update".to_string()),
+                span_trace: SpanTrace::capture(),
             })
     } else {
         Err(Error::NotFound {
@@ -768,6 +798,7 @@ pub async fn update_attachment(
             response_body: Some(format!(
                 "Failed to update attachment for quote with ID {quote_id}"
             )),
+            span_trace: SpanTrace::capture(),
         })
     }
 }

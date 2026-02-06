@@ -4,6 +4,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use time::{Date, OffsetDateTime};
+use tracing_error::SpanTrace;
 use url::Url;
 use uuid::Uuid;
 
@@ -561,13 +562,17 @@ pub async fn get(client: &Client, invoice_id: Uuid) -> Result<Invoice> {
 
 /// Create one or more invoices.
 #[instrument(skip(client, invoice))]
-pub async fn create(client: &Client, invoice: &Builder) -> Result<Invoice> {
+pub async fn create(
+    client: &Client,
+    invoice: &Builder,
+    options: &crate::MutationOptions,
+) -> Result<Invoice> {
     let request = InvoiceWrapper {
         invoices: vec![invoice],
     };
 
     let response: MutationResponse = client
-        .put_endpoint(XeroEndpoint::Invoices, &request)
+        .put_endpoint_with_options(XeroEndpoint::Invoices, &request, options)
         .await?;
 
     // Extract invoice from response
@@ -580,12 +585,18 @@ pub async fn create(client: &Client, invoice: &Builder) -> Result<Invoice> {
             url: XeroEndpoint::Invoices.to_string(),
             status_code: reqwest::StatusCode::NOT_FOUND,
             response_body: Some("No invoice returned in response".to_string()),
+            span_trace: SpanTrace::capture(),
         })
 }
 
 /// Update a specific invoice.
 #[instrument(skip(client, invoice))]
-pub async fn update(client: &Client, invoice_id: Uuid, invoice: &Builder) -> Result<Invoice> {
+pub async fn update(
+    client: &Client,
+    invoice_id: Uuid,
+    invoice: &Builder,
+    options: &crate::MutationOptions,
+) -> Result<Invoice> {
     let mut updatable_invoice = invoice.clone();
     updatable_invoice.invoice_id = Some(invoice_id);
 
@@ -594,7 +605,9 @@ pub async fn update(client: &Client, invoice_id: Uuid, invoice: &Builder) -> Res
     };
 
     let endpoint = XeroEndpoint::Invoice(invoice_id);
-    let response: MutationResponse = client.post_endpoint(endpoint.clone(), &request).await?;
+    let response: MutationResponse = client
+        .post_endpoint_with_options(endpoint.clone(), &request, options)
+        .await?;
 
     // Extract invoice from response
     response
@@ -606,18 +619,23 @@ pub async fn update(client: &Client, invoice_id: Uuid, invoice: &Builder) -> Res
             url: endpoint.to_string(),
             status_code: reqwest::StatusCode::NOT_FOUND,
             response_body: Some(format!("Invoice with ID {invoice_id} not found")),
+            span_trace: SpanTrace::capture(),
         })
 }
 
 /// Update or create one or more invoices.
 #[instrument(skip(client, invoice))]
-pub async fn update_or_create(client: &Client, invoice: &Builder) -> Result<Invoice> {
+pub async fn update_or_create(
+    client: &Client,
+    invoice: &Builder,
+    options: &crate::MutationOptions,
+) -> Result<Invoice> {
     let request = InvoiceWrapper {
         invoices: vec![invoice],
     };
 
     let response: MutationResponse = client
-        .post_endpoint(XeroEndpoint::Invoices, &request)
+        .post_endpoint_with_options(XeroEndpoint::Invoices, &request, options)
         .await?;
 
     // Extract invoice from response
@@ -630,6 +648,7 @@ pub async fn update_or_create(client: &Client, invoice: &Builder) -> Result<Invo
             url: XeroEndpoint::Invoices.to_string(),
             status_code: reqwest::StatusCode::NOT_FOUND,
             response_body: Some("No invoice returned in response".to_string()),
+            span_trace: SpanTrace::capture(),
         })
 }
 
@@ -661,6 +680,7 @@ pub async fn get_pdf(client: &Client, invoice_id: Uuid) -> Result<Vec<u8>> {
             response_body: Some(format!(
                 "Failed to retrieve PDF for invoice with ID {invoice_id}"
             )),
+            span_trace: SpanTrace::capture(),
         })
     }
 }
@@ -774,6 +794,7 @@ pub async fn get_attachment(
             response_body: Some(format!(
                 "Failed to retrieve attachment for invoice with ID {invoice_id}"
             )),
+            span_trace: SpanTrace::capture(),
         })
     }
 }
@@ -811,6 +832,7 @@ pub async fn get_attachment_by_filename(
             response_body: Some(format!(
                 "Failed to retrieve attachment {filename} for invoice with ID {invoice_id}"
             )),
+            span_trace: SpanTrace::capture(),
         })
     }
 }
@@ -881,6 +903,7 @@ pub async fn upload_attachment(
                 url: endpoint.to_string(),
                 status_code: status,
                 response_body: Some("No attachment was returned after upload".to_string()),
+                span_trace: SpanTrace::capture(),
             })
     } else {
         Err(Error::NotFound {
@@ -890,6 +913,7 @@ pub async fn upload_attachment(
             response_body: Some(format!(
                 "Failed to upload attachment for invoice with ID {invoice_id}"
             )),
+            span_trace: SpanTrace::capture(),
         })
     }
 }
@@ -960,6 +984,7 @@ pub async fn update_attachment(
                 url: endpoint.to_string(),
                 status_code: status,
                 response_body: Some("No attachment was returned after update".to_string()),
+                span_trace: SpanTrace::capture(),
             })
     } else {
         Err(Error::NotFound {
@@ -969,6 +994,7 @@ pub async fn update_attachment(
             response_body: Some(format!(
                 "Failed to update attachment for invoice with ID {invoice_id}"
             )),
+            span_trace: SpanTrace::capture(),
         })
     }
 }

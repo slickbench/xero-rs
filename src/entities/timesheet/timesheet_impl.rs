@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use time::Date;
 use tracing::{debug, error, info};
+use tracing_error::SpanTrace;
 use uuid::Uuid;
 
 use super::{TimesheetLine, TimesheetStatus};
@@ -131,6 +132,7 @@ impl Timesheet {
                 url: url.to_string(),
                 status_code: reqwest::StatusCode::NOT_FOUND,
                 response_body: Some(format!("{response:?}")),
+                span_trace: SpanTrace::capture(),
             });
         }
 
@@ -167,6 +169,7 @@ impl Timesheet {
                 url,
                 status_code: reqwest::StatusCode::NOT_FOUND,
                 response_body: Some(format!("{response:?}")),
+                span_trace: SpanTrace::capture(),
             });
         }
 
@@ -210,9 +213,10 @@ impl Timesheet {
 
         if !status.is_success() {
             error!("Error listing timesheets: HTTP status {}", status);
-            return Err(crate::error::Error::API(serde_json::from_str(
-                &response.text().await?,
-            )?));
+            return Err(crate::error::Error::API {
+                response: serde_json::from_str(&response.text().await?)?,
+                span_trace: SpanTrace::capture(),
+            });
         }
 
         // Parse the response
@@ -260,6 +264,7 @@ impl Timesheet {
                 url,
                 status_code: reqwest::StatusCode::NOT_FOUND,
                 response_body: Some(format!("{response:?}")),
+                span_trace: SpanTrace::capture(),
             });
         }
 

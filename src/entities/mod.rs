@@ -136,6 +136,7 @@ pub trait EntityEndpoint<T, ListParams = ()> {
 pub mod endpoint_utils {
     use serde::de::DeserializeOwned;
     use std::str::FromStr;
+    use tracing_error::SpanTrace;
     use url::Url;
     use uuid::Uuid;
 
@@ -170,6 +171,7 @@ pub mod endpoint_utils {
             url: endpoint_str,
             status_code: reqwest::StatusCode::NOT_FOUND,
             response_body: Some(format!("{entity_name} with ID {id} not found")),
+            span_trace: SpanTrace::capture(),
         })
     }
 
@@ -217,6 +219,7 @@ pub trait EntityBuilder<T> {
 /// Helper functions for entity creation
 pub mod builder_utils {
     use serde::{Serialize, de::DeserializeOwned};
+    use tracing_error::SpanTrace;
 
     use crate::{
         Client,
@@ -237,6 +240,7 @@ pub mod builder_utils {
             url: endpoint.to_string(),
             status_code: reqwest::StatusCode::INTERNAL_SERVER_ERROR,
             response_body: Some("Failed to create entity".to_string()),
+            span_trace: SpanTrace::capture(),
         })
     }
 }

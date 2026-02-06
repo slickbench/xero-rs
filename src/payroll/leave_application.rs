@@ -25,6 +25,7 @@
 use serde::{Deserialize, Serialize};
 use time::{Date, OffsetDateTime};
 use tracing::{debug, error, info};
+use tracing_error::SpanTrace;
 use uuid::Uuid;
 
 use crate::{
@@ -341,18 +342,24 @@ impl LeaveApplication {
                     return Err(crate::error::Error::Forbidden(Box::new(forbidden)));
                 }
                 // Fall back to generic API error if can't parse as ForbiddenResponse
-                return Err(crate::error::Error::API(crate::error::Response {
-                    error_number: Some(403),
-                    status: Some(403),
-                    title: Some("Forbidden".to_string()),
-                    message: Some("Forbidden - check payroll scopes".to_string()),
-                    detail: Some(text),
-                    instance: None,
-                    error: crate::error::ErrorType::Other("Forbidden".to_string()),
-                }));
+                return Err(crate::error::Error::API {
+                    response: crate::error::Response {
+                        error_number: Some(403),
+                        status: Some(403),
+                        title: Some("Forbidden".to_string()),
+                        message: Some("Forbidden - check payroll scopes".to_string()),
+                        detail: Some(text),
+                        instance: None,
+                        error: crate::error::ErrorType::Other("Forbidden".to_string()),
+                    },
+                    span_trace: SpanTrace::capture(),
+                });
             }
 
-            return Err(crate::error::Error::API(serde_json::from_str(&text)?));
+            return Err(crate::error::Error::API {
+                response: serde_json::from_str(&text)?,
+                span_trace: SpanTrace::capture(),
+            });
         }
 
         let response: LeaveApplicationResponse = response.json().await?;
@@ -397,6 +404,7 @@ impl LeaveApplication {
                 response_body: Some(format!(
                     "Leave application with ID {leave_application_id} not found"
                 )),
+                span_trace: SpanTrace::capture(),
             });
         }
 
@@ -438,6 +446,7 @@ impl LeaveApplication {
                 url: ENDPOINT.to_string(),
                 status_code: reqwest::StatusCode::NOT_FOUND,
                 response_body: Some(format!("{response:?}")),
+                span_trace: SpanTrace::capture(),
             });
         }
 
@@ -482,6 +491,7 @@ impl LeaveApplication {
                 url,
                 status_code: reqwest::StatusCode::NOT_FOUND,
                 response_body: Some(format!("{response:?}")),
+                span_trace: SpanTrace::capture(),
             });
         }
 
@@ -526,6 +536,7 @@ impl LeaveApplication {
                 url,
                 status_code: reqwest::StatusCode::NOT_FOUND,
                 response_body: Some(format!("{response:?}")),
+                span_trace: SpanTrace::capture(),
             });
         }
 
@@ -566,6 +577,7 @@ impl LeaveApplication {
                 url,
                 status_code: reqwest::StatusCode::NOT_FOUND,
                 response_body: Some(format!("{response:?}")),
+                span_trace: SpanTrace::capture(),
             });
         }
 
