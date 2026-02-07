@@ -9,7 +9,7 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::{
-    Client,
+    Client, UnitDp,
     contact::{Contact, ContactIdentifier},
     endpoints::XeroEndpoint,
     entities::{EntityEndpoint, MutationResponse, endpoint_utils},
@@ -279,12 +279,13 @@ pub struct ListParameters {
     #[serde(rename = "IDs", skip_serializing_if = "Option::is_none")]
     pub ids: Option<String>,
 
-    /// Unit price decimal places (4 or 2, defaults to 2 if not specified)
+    /// Unit price decimal places for line item amounts.
     ///
-    /// By default, the API accepts unit prices (UnitAmount) to two decimal places.
-    /// Set to 4 to get unit prices with 4 decimal precision.
+    /// By default, the API accepts unit prices (`UnitAmount`) to two decimal places.
+    /// Set to `UnitDp::Four` to get unit prices with 4 decimal precision.
+    /// If not set, the client's `default_unitdp` will be used automatically.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub unitdp: Option<u8>,
+    pub unitdp: Option<UnitDp>,
 }
 
 impl ListParameters {
@@ -383,12 +384,13 @@ impl ListParameters {
         self
     }
 
-    /// Set unit price decimal places (4 for 4 decimal precision, 2 for default)
+    /// Set unit price decimal places.
     ///
     /// By default, the API returns unit prices with 2 decimal places.
-    /// Use this to request 4 decimal places for more precision.
+    /// Use `UnitDp::Four` to request 4 decimal places for more precision.
+    /// This overrides the client's `default_unitdp` for this request.
     #[must_use]
-    pub fn with_unitdp(mut self, unitdp: u8) -> Self {
+    pub fn with_unitdp(mut self, unitdp: UnitDp) -> Self {
         self.unitdp = Some(unitdp);
         self
     }
@@ -544,35 +546,44 @@ impl EntityEndpoint<Invoice, ListParameters> for Invoice {
 
 /// Retrieve a list of invoices with filtering.
 #[instrument(skip(client))]
-pub async fn list(client: &Client, params: ListParameters) -> Result<Vec<Invoice>> {
+pub async fn list(client: &Client, mut params: ListParameters) -> Result<Vec<Invoice>> {
+    if params.unitdp.is_none() {
+        params.unitdp = client.default_unitdp();
+    }
     Invoice::list(client, params).await
 }
 
 /// Retrieve a list of all invoices without filtering.
 #[instrument(skip(client))]
 pub async fn list_all(client: &Client) -> Result<Vec<Invoice>> {
-    Invoice::list(client, ListParameters::default()).await
+    list(client, ListParameters::default()).await
 }
 
-/// Retrieve a single invoice by it's `invoice_id`.
+/// Retrieve a single invoice by its `invoice_id`.
 #[instrument(skip(client))]
 pub async fn get(client: &Client, invoice_id: Uuid) -> Result<Invoice> {
-    Invoice::get(client, invoice_id).await
+    let endpoint = XeroEndpoint::Invoice(invoice_id);
+    let query = client.unitdp_query();
+    let response: ListResponse = client.get_endpoint(endpoint.clone(), &query).await?;
+    response.invoices.into_iter().next().ok_or(Error::NotFound {
+        entity: "Invoice".to_string(),
+        url: endpoint.to_string(),
+        status_code: reqwest::StatusCode::NOT_FOUND,
+        response_body: Some(format!("Invoice with ID {invoice_id} not found")),
+        span_trace: SpanTrace::capture(),
+    })
 }
 
 /// Create one or more invoices.
 #[instrument(skip(client, invoice))]
-pub async fn create(
-    client: &Client,
-    invoice: &Builder,
-    options: &crate::MutationOptions,
-) -> Result<Invoice> {
+pub async fn create(client: &Client, invoice: &Builder) -> Result<Invoice> {
     let request = InvoiceWrapper {
         invoices: vec![invoice],
     };
+    let options = client.mutation_options();
 
     let response: MutationResponse = client
-        .put_endpoint_with_options(XeroEndpoint::Invoices, &request, options)
+        .put_endpoint_with_options(XeroEndpoint::Invoices, &request, &options)
         .await?;
 
     // Extract invoice from response
@@ -591,22 +602,18 @@ pub async fn create(
 
 /// Update a specific invoice.
 #[instrument(skip(client, invoice))]
-pub async fn update(
-    client: &Client,
-    invoice_id: Uuid,
-    invoice: &Builder,
-    options: &crate::MutationOptions,
-) -> Result<Invoice> {
+pub async fn update(client: &Client, invoice_id: Uuid, invoice: &Builder) -> Result<Invoice> {
     let mut updatable_invoice = invoice.clone();
     updatable_invoice.invoice_id = Some(invoice_id);
 
     let request = InvoiceWrapper {
         invoices: vec![&updatable_invoice],
     };
+    let options = client.mutation_options();
 
     let endpoint = XeroEndpoint::Invoice(invoice_id);
     let response: MutationResponse = client
-        .post_endpoint_with_options(endpoint.clone(), &request, options)
+        .post_endpoint_with_options(endpoint.clone(), &request, &options)
         .await?;
 
     // Extract invoice from response
@@ -625,17 +632,14 @@ pub async fn update(
 
 /// Update or create one or more invoices.
 #[instrument(skip(client, invoice))]
-pub async fn update_or_create(
-    client: &Client,
-    invoice: &Builder,
-    options: &crate::MutationOptions,
-) -> Result<Invoice> {
+pub async fn update_or_create(client: &Client, invoice: &Builder) -> Result<Invoice> {
     let request = InvoiceWrapper {
         invoices: vec![invoice],
     };
+    let options = client.mutation_options();
 
     let response: MutationResponse = client
-        .post_endpoint_with_options(XeroEndpoint::Invoices, &request, options)
+        .post_endpoint_with_options(XeroEndpoint::Invoices, &request, &options)
         .await?;
 
     // Extract invoice from response

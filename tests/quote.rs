@@ -140,11 +140,7 @@ async fn create_update_quote() -> Result<()> {
     };
 
     // Create the quote
-    let created_quote = match client
-        .quotes()
-        .create(&quote_builder, &xero_rs::MutationOptions::default())
-        .await
-    {
+    let created_quote = match client.quotes().create(&quote_builder).await {
         Ok(quote) => {
             info!("Created quote: {}", quote.quote_id);
             quote
@@ -431,11 +427,7 @@ async fn create_quote_with_line_items() -> Result<()> {
         status: Some(Status::Draft),
     };
 
-    match client
-        .quotes()
-        .create(&quote_builder, &xero_rs::MutationOptions::default())
-        .await
-    {
+    match client.quotes().create(&quote_builder).await {
         Ok(quote) => {
             info!(
                 "Created quote {} with {} line items",
@@ -516,11 +508,7 @@ async fn update_quote_line_items() -> Result<()> {
         status: Some(Status::Draft),
     };
 
-    let created_quote = match client
-        .quotes()
-        .create(&quote_builder, &xero_rs::MutationOptions::default())
-        .await
-    {
+    let created_quote = match client.quotes().create(&quote_builder).await {
         Ok(quote) => {
             info!(
                 "Created quote {} with {} line item(s)",
@@ -660,11 +648,7 @@ async fn quote_status_transitions() -> Result<()> {
         status: Some(Status::Draft),
     };
 
-    let created_quote = match client
-        .quotes()
-        .create(&quote_builder, &xero_rs::MutationOptions::default())
-        .await
-    {
+    let created_quote = match client.quotes().create(&quote_builder).await {
         Ok(quote) => {
             info!("Created draft quote: {}", quote.quote_id);
             assert!(
@@ -834,11 +818,7 @@ async fn update_quote_number_prefix() -> Result<()> {
         status: Some(Status::Draft),
     };
 
-    let created_quote = match client
-        .quotes()
-        .create(&quote_builder, &xero_rs::MutationOptions::default())
-        .await
-    {
+    let created_quote = match client.quotes().create(&quote_builder).await {
         Ok(quote) => {
             info!("Created quote with number: {}", quote.quote_number);
             quote

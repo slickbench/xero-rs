@@ -72,10 +72,7 @@ async fn capture_quote_validation_error_missing_contact() -> Result<()> {
     };
 
     // Create the quote
-    let created_quote = client
-        .quotes()
-        .create(&quote_builder, &xero_rs::MutationOptions::default())
-        .await;
+    let created_quote = client.quotes().create(&quote_builder).await;
 
     if let Ok(created_quote) = created_quote {
         info!("Created quote with ID: {}", created_quote.quote_id);
@@ -193,10 +190,7 @@ async fn capture_quote_validation_multiple_errors() -> Result<()> {
         status: None,
     };
 
-    let result = client
-        .quotes()
-        .create(&invalid_quote, &xero_rs::MutationOptions::default())
-        .await;
+    let result = client.quotes().create(&invalid_quote).await;
 
     if let Err(Error::API {
         response: api_error,

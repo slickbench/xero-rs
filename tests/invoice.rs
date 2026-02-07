@@ -157,11 +157,7 @@ async fn create_update_invoice() -> Result<()> {
     };
 
     // Create the invoice
-    let created_invoice = match client
-        .invoices()
-        .create(&invoice_builder, &xero_rs::MutationOptions::default())
-        .await
-    {
+    let created_invoice = match client.invoices().create(&invoice_builder).await {
         Ok(invoice) => {
             info!("Created invoice: {}", invoice.invoice_id);
             invoice

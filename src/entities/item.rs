@@ -1,11 +1,13 @@
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 use time::OffsetDateTime;
 use tracing_error::SpanTrace;
+use url::Url;
 use uuid::Uuid;
 
 use crate::{
-    Client,
+    Client, UnitDp,
     endpoints::XeroEndpoint,
     entities::{EntityEndpoint, MutationResponse, endpoint_utils},
     error::{Error, Result},
@@ -151,9 +153,10 @@ pub struct ListParameters {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub order: Option<String>,
 
-    /// Number of decimal places for unit amounts
+    /// Unit decimal places for line item amounts.
+    /// If not set, the client's `default_unitdp` will be used automatically.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub unitdp: Option<u8>,
+    pub unitdp: Option<UnitDp>,
 }
 
 impl ListParameters {
@@ -177,9 +180,10 @@ impl ListParameters {
         self
     }
 
-    /// Set the unit decimal places
+    /// Set the unit decimal places.
+    /// This overrides the client's `default_unitdp` for this request.
     #[must_use]
-    pub fn with_unitdp(mut self, unitdp: u8) -> Self {
+    pub fn with_unitdp(mut self, unitdp: UnitDp) -> Self {
         self.unitdp = Some(unitdp);
         self
     }
@@ -362,48 +366,60 @@ impl EntityEndpoint<Item, ListParameters> for Item {
     }
 }
 
-// Add extension methods to Item
 impl Item {
     /// Get a single item by code
     pub async fn get_by_code(client: &Client, code: &str) -> Result<Item> {
-        use std::str::FromStr;
-        use url::Url;
-
-        let endpoint = Url::from_str(ENDPOINT)
-            .and_then(|endpoint| endpoint.join(code))
-            .map_err(|_| Error::InvalidEndpoint)?;
-        let endpoint_str = endpoint.to_string();
-        let empty_vec: Vec<String> = Vec::new();
-        let response: ListResponse = client.get(endpoint, &empty_vec).await?;
-        let items = Vec::from(response);
-        items.into_iter().next().ok_or(Error::NotFound {
-            entity: "Item".to_string(),
-            url: endpoint_str,
-            status_code: reqwest::StatusCode::NOT_FOUND,
-            response_body: Some(format!("Item with code {code} not found")),
-            span_trace: SpanTrace::capture(),
-        })
+        get_by_code(client, code).await
     }
 }
 
 /// List items with optional parameters
-pub async fn list(client: &Client, params: ListParameters) -> Result<Vec<Item>> {
+pub async fn list(client: &Client, mut params: ListParameters) -> Result<Vec<Item>> {
+    if params.unitdp.is_none() {
+        params.unitdp = client.default_unitdp();
+    }
     Item::list(client, params).await
 }
 
 /// List all items without any filtering
 pub async fn list_all(client: &Client) -> Result<Vec<Item>> {
-    Item::list(client, ListParameters::default()).await
+    list(client, ListParameters::default()).await
 }
 
 /// Get a single item by ID
 pub async fn get(client: &Client, item_id: Uuid) -> Result<Item> {
-    Item::get(client, item_id).await
+    let endpoint = Url::from_str(ENDPOINT)
+        .and_then(|endpoint| endpoint.join(&item_id.to_string()))
+        .map_err(|_| Error::InvalidEndpoint)?;
+    let endpoint_str = endpoint.to_string();
+    let query = client.unitdp_query();
+    let response: ListResponse = client.get(endpoint, &query).await?;
+    let items = Vec::from(response);
+    items.into_iter().next().ok_or(Error::NotFound {
+        entity: "Item".to_string(),
+        url: endpoint_str,
+        status_code: reqwest::StatusCode::NOT_FOUND,
+        response_body: Some(format!("Item with ID {item_id} not found")),
+        span_trace: SpanTrace::capture(),
+    })
 }
 
 /// Get a single item by code
 pub async fn get_by_code(client: &Client, code: &str) -> Result<Item> {
-    Item::get_by_code(client, code).await
+    let endpoint = Url::from_str(ENDPOINT)
+        .and_then(|endpoint| endpoint.join(code))
+        .map_err(|_| Error::InvalidEndpoint)?;
+    let endpoint_str = endpoint.to_string();
+    let query = client.unitdp_query();
+    let response: ListResponse = client.get(endpoint, &query).await?;
+    let items = Vec::from(response);
+    items.into_iter().next().ok_or(Error::NotFound {
+        entity: "Item".to_string(),
+        url: endpoint_str,
+        status_code: reqwest::StatusCode::NOT_FOUND,
+        response_body: Some(format!("Item with code {code} not found")),
+        span_trace: SpanTrace::capture(),
+    })
 }
 
 /// Create one or more items
@@ -411,9 +427,14 @@ pub async fn create(client: &Client, items: &[Builder]) -> Result<Vec<Item>> {
     let wrapper = ItemWrapper {
         items: items.iter().collect(),
     };
+    let options = client.mutation_options();
 
     let response: MutationResponse = client
-        .put_endpoint(XeroEndpoint::Custom(vec!["Items".to_string()]), &wrapper)
+        .put_endpoint_with_options(
+            XeroEndpoint::Custom(vec!["Items".to_string()]),
+            &wrapper,
+            &options,
+        )
         .await?;
 
     response.data.get_items().ok_or(Error::NotFound {
@@ -442,9 +463,14 @@ pub async fn update_or_create(client: &Client, items: &[Builder]) -> Result<Vec<
     let wrapper = ItemWrapper {
         items: items.iter().collect(),
     };
+    let options = client.mutation_options();
 
     let response: MutationResponse = client
-        .post_endpoint(XeroEndpoint::Custom(vec!["Items".to_string()]), &wrapper)
+        .post_endpoint_with_options(
+            XeroEndpoint::Custom(vec!["Items".to_string()]),
+            &wrapper,
+            &options,
+        )
         .await?;
 
     response.data.get_items().ok_or(Error::NotFound {
@@ -464,9 +490,12 @@ pub async fn update(client: &Client, item_id: Uuid, item: &Builder) -> Result<It
     let wrapper = ItemWrapper {
         items: vec![&item_with_id],
     };
+    let options = client.mutation_options();
 
     let endpoint = XeroEndpoint::Custom(vec![format!("Items/{}", item_id)]);
-    let response: MutationResponse = client.post_endpoint(endpoint, &wrapper).await?;
+    let response: MutationResponse = client
+        .post_endpoint_with_options(endpoint, &wrapper, &options)
+        .await?;
 
     response
         .data

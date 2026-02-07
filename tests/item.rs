@@ -76,7 +76,7 @@ async fn list_items_with_filters() -> Result<()> {
     let params = item::ListParameters::builder()
         .with_where("IsSold==true")
         .with_order("Code ASC")
-        .with_unitdp(2);
+        .with_unitdp(xero_rs::UnitDp::Two);
 
     let items = client.items().list(params).await?;
     info!("Found {} items that are sold", items.len());

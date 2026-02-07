@@ -14,6 +14,7 @@ use tokio::time::sleep;
 use url::Url;
 use uuid::Uuid;
 
+use crate::UnitDp;
 use crate::endpoints::{BASE_URL, XeroEndpoint};
 use crate::entities::{
     MutationResponse,
@@ -152,6 +153,9 @@ pub struct Client {
     /// When set via `with_concurrency_limit()`, the client will ensure
     /// that no more than the specified number of requests are in flight.
     concurrency_limiter: Option<Arc<tokio::sync::Semaphore>>,
+    /// Default unit decimal places for line item amounts.
+    /// Applied automatically to all applicable endpoints (invoices, items, quotes).
+    default_unitdp: Option<UnitDp>,
 }
 
 impl Client {
@@ -251,6 +255,7 @@ impl Client {
             tenant_id: Arc::new(RwLock::new(None)),
             refresh_credentials: None,
             concurrency_limiter: None,
+            default_unitdp: None,
         })
     }
 
@@ -286,6 +291,7 @@ impl Client {
             tenant_id: Arc::new(RwLock::new(None)),
             refresh_credentials: None,
             concurrency_limiter: None,
+            default_unitdp: None,
         })
     }
 
@@ -468,6 +474,50 @@ impl Client {
     pub fn without_concurrency_limit(mut self) -> Self {
         self.concurrency_limiter = None;
         self
+    }
+
+    /// Set default unit decimal places for all applicable endpoints.
+    ///
+    /// When set, this value is automatically applied to all endpoints that include
+    /// line items (invoices, items, quotes). Per-request overrides on `ListParameters`
+    /// take precedence over this default.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use xero_rs::{Client, KeyPair, UnitDp};
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let key_pair = KeyPair::from_env();
+    /// let client = Client::from_client_credentials(key_pair, None)
+    ///     .await?
+    ///     .with_unitdp(UnitDp::Four);
+    /// // unitdp=4 applied automatically to all applicable requests
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn with_unitdp(mut self, unitdp: UnitDp) -> Self {
+        self.default_unitdp = Some(unitdp);
+        self
+    }
+
+    /// Get the default unit decimal places setting.
+    pub(crate) fn default_unitdp(&self) -> Option<UnitDp> {
+        self.default_unitdp
+    }
+
+    /// Build `MutationOptions` from the client's default configuration.
+    pub(crate) fn mutation_options(&self) -> crate::MutationOptions {
+        crate::MutationOptions {
+            unitdp: self.default_unitdp,
+        }
+    }
+
+    /// Build a `UnitDpQuery` from the client's default configuration.
+    pub(crate) fn unitdp_query(&self) -> crate::UnitDpQuery {
+        crate::UnitDpQuery {
+            unitdp: self.default_unitdp,
+        }
     }
 
     /// Build a request object with authentication headers.
@@ -1032,7 +1082,7 @@ impl Client {
             request_id = %Uuid::new_v4(),
         )
     )]
-    pub async fn post_endpoint_with_options<
+    pub(crate) async fn post_endpoint_with_options<
         'a,
         R: DeserializeOwned,
         T: Serialize + Sized + fmt::Debug,
@@ -1076,7 +1126,7 @@ impl Client {
             request_id = %Uuid::new_v4(),
         )
     )]
-    pub async fn put_endpoint_with_options<'a, R: DeserializeOwned, T: Serialize + Sized>(
+    pub(crate) async fn put_endpoint_with_options<'a, R: DeserializeOwned, T: Serialize + Sized>(
         &self,
         endpoint: XeroEndpoint,
         data: &T,
@@ -1525,68 +1575,43 @@ pub struct InvoicesApi<'a> {
 
 impl InvoicesApi<'_> {
     /// List invoices with optional parameters
-    #[instrument(skip(self))]
+    #[instrument(skip(self, parameters))]
     pub async fn list(&self, parameters: invoice::ListParameters) -> Result<Vec<Invoice>> {
-        let response: invoice::ListResponse = self
-            .client
-            .get_endpoint(XeroEndpoint::Invoices, &parameters)
-            .await?;
-        Ok(response.invoices)
+        invoice::list(self.client, parameters).await
     }
 
     /// List all invoices without any filtering
     #[instrument(skip(self))]
     pub async fn list_all(&self) -> Result<Vec<Invoice>> {
-        self.list(invoice::ListParameters::default()).await
+        invoice::list_all(self.client).await
     }
 
     /// Get a single invoice by ID
     #[instrument(skip(self))]
     pub async fn get(&self, invoice_id: Uuid) -> Result<Invoice> {
-        let endpoint = XeroEndpoint::Invoice(invoice_id);
-        let empty_tuple = ();
-        let response: invoice::ListResponse = self
-            .client
-            .get_endpoint(endpoint.clone(), &empty_tuple)
-            .await?;
-        response.invoices.into_iter().next().ok_or(Error::NotFound {
-            entity: "Invoice".to_string(),
-            url: endpoint.to_string(),
-            status_code: reqwest::StatusCode::NOT_FOUND,
-            response_body: Some(format!("Invoice with ID {invoice_id} not found")),
-            span_trace: SpanTrace::capture(),
-        })
+        invoice::get(self.client, invoice_id).await
     }
 
     /// Create a new invoice
-    #[instrument(skip(self, invoice, options))]
-    pub async fn create(
-        &self,
-        invoice: &invoice::Builder,
-        options: &crate::MutationOptions,
-    ) -> Result<Invoice> {
-        invoice::create(self.client, invoice, options).await
+    #[instrument(skip(self, invoice))]
+    pub async fn create(&self, invoice: &invoice::Builder) -> Result<Invoice> {
+        invoice::create(self.client, invoice).await
     }
 
     /// Update an existing invoice
-    #[instrument(skip(self, invoice, options))]
+    #[instrument(skip(self, invoice))]
     pub async fn update(
         &mut self,
         invoice_id: Uuid,
         invoice: &invoice::Builder,
-        options: &crate::MutationOptions,
     ) -> Result<Invoice> {
-        invoice::update(self.client, invoice_id, invoice, options).await
+        invoice::update(self.client, invoice_id, invoice).await
     }
 
     /// Update or create an invoice
-    #[instrument(skip(self, invoice, options))]
-    pub async fn update_or_create(
-        &self,
-        invoice: &invoice::Builder,
-        options: &crate::MutationOptions,
-    ) -> Result<Invoice> {
-        invoice::update_or_create(self.client, invoice, options).await
+    #[instrument(skip(self, invoice))]
+    pub async fn update_or_create(&self, invoice: &invoice::Builder) -> Result<Invoice> {
+        invoice::update_or_create(self.client, invoice).await
     }
 
     /// Get the invoice as a PDF
@@ -1786,34 +1811,21 @@ impl QuotesApi<'_> {
     }
 
     /// Create a new quote
-    #[instrument(skip(self, quote, options))]
-    pub async fn create(
-        &self,
-        quote: &quote::QuoteBuilder,
-        options: &crate::MutationOptions,
-    ) -> Result<Quote> {
-        quote::create(self.client, quote, options).await
+    #[instrument(skip(self, quote))]
+    pub async fn create(&self, quote: &quote::QuoteBuilder) -> Result<Quote> {
+        quote::create(self.client, quote).await
     }
 
     /// Update or create a quote
-    #[instrument(skip(self, quote, options))]
-    pub async fn update_or_create(
-        &self,
-        quote: &quote::QuoteBuilder,
-        options: &crate::MutationOptions,
-    ) -> Result<Quote> {
-        quote::update_or_create(self.client, quote, options).await
+    #[instrument(skip(self, quote))]
+    pub async fn update_or_create(&self, quote: &quote::QuoteBuilder) -> Result<Quote> {
+        quote::update_or_create(self.client, quote).await
     }
 
     /// Update a specific quote
-    #[instrument(skip(self, quote, options))]
-    pub async fn update(
-        &self,
-        quote_id: Uuid,
-        quote: &quote::QuoteBuilder,
-        options: &crate::MutationOptions,
-    ) -> Result<Quote> {
-        quote::update(self.client, quote_id, quote, options).await
+    #[instrument(skip(self, quote))]
+    pub async fn update(&self, quote_id: Uuid, quote: &quote::QuoteBuilder) -> Result<Quote> {
+        quote::update(self.client, quote_id, quote).await
     }
 
     /// Get the history records for a quote

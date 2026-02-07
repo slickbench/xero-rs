@@ -71,13 +71,37 @@ pub use error::{Error, RateLimitType};
 pub use oauth::KeyPair;
 pub use scope::{Permission, Scope, ScopeCategory, ScopeType};
 
+/// Unit decimal places for line item amounts.
+/// Controls precision of `UnitAmount` values in the Xero API.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnitDp {
+    /// 2 decimal places (Xero default)
+    Two,
+    /// 4 decimal places (higher precision)
+    Four,
+}
+
+impl UnitDp {
+    pub(crate) fn as_u8(self) -> u8 {
+        match self {
+            Self::Two => 2,
+            Self::Four => 4,
+        }
+    }
+}
+
+impl serde::Serialize for UnitDp {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u8(self.as_u8())
+    }
+}
+
 /// Options for mutation (create/update) API requests.
 /// These control query parameters appended to PUT/POST URLs.
 #[derive(Debug, Default, Clone)]
-pub struct MutationOptions {
-    /// Unit decimal places (4 or 2, defaults to 2 if not specified).
-    /// Must be set to 4 to preserve 4dp unit prices on invoices/quotes/items.
-    pub unitdp: Option<u8>,
+pub(crate) struct MutationOptions {
+    /// Unit decimal places for line item amounts.
+    pub unitdp: Option<UnitDp>,
 }
 
 impl MutationOptions {
@@ -85,9 +109,16 @@ impl MutationOptions {
     pub fn apply_to_url(&self, url: &mut url::Url) {
         if let Some(unitdp) = self.unitdp {
             url.query_pairs_mut()
-                .append_pair("unitdp", &unitdp.to_string());
+                .append_pair("unitdp", &unitdp.as_u8().to_string());
         }
     }
+}
+
+/// Query struct for passing unitdp on GET requests.
+#[derive(Debug, serde::Serialize, Default)]
+pub(crate) struct UnitDpQuery {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unitdp: Option<UnitDp>,
 }
 
 // Re-export SpanTrace for users who want to access it

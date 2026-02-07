@@ -7,7 +7,7 @@ use tracing_error::SpanTrace;
 use uuid::Uuid;
 
 use crate::{
-    Client,
+    Client, UnitDp,
     contact::{Contact, ContactIdentifier},
     endpoints::XeroEndpoint,
     entities::{EntityEndpoint, MutationResponse, endpoint_utils},
@@ -125,12 +125,13 @@ pub struct ListParameters {
     #[serde(rename = "QuoteNumber", skip_serializing_if = "Option::is_none")]
     pub quote_number: Option<String>,
 
-    /// Unit price decimal places (4 or 2, defaults to 2 if not specified)
+    /// Unit decimal places for line item amounts.
     ///
-    /// By default, the API accepts unit prices (UnitAmount) to two decimal places.
-    /// Set to 4 to get unit prices with 4 decimal precision.
+    /// By default, the API accepts unit prices (`UnitAmount`) to two decimal places.
+    /// Set to `UnitDp::Four` to get unit prices with 4 decimal precision.
+    /// If not set, the client's `default_unitdp` will be used automatically.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub unitdp: Option<u8>,
+    pub unitdp: Option<UnitDp>,
 }
 
 impl ListParameters {
@@ -203,12 +204,13 @@ impl ListParameters {
         self
     }
 
-    /// Set unit price decimal places (4 for 4 decimal precision, 2 for default)
+    /// Set unit price decimal places.
     ///
     /// By default, the API returns unit prices with 2 decimal places.
-    /// Use this to request 4 decimal places for more precision.
+    /// Use `UnitDp::Four` to request 4 decimal places for more precision.
+    /// This overrides the client's `default_unitdp` for this request.
     #[must_use]
-    pub fn with_unitdp(mut self, unitdp: u8) -> Self {
+    pub fn with_unitdp(mut self, unitdp: UnitDp) -> Self {
         self.unitdp = Some(unitdp);
         self
     }
@@ -353,28 +355,29 @@ impl EntityEndpoint<Quote, ListParameters> for Quote {
 
 /// Retrieve a list of quotes with filtering.
 #[instrument(skip(client))]
-pub async fn list(client: &Client, params: ListParameters) -> Result<Vec<Quote>> {
+pub async fn list(client: &Client, mut params: ListParameters) -> Result<Vec<Quote>> {
+    if params.unitdp.is_none() {
+        params.unitdp = client.default_unitdp();
+    }
     Quote::list(client, params).await
 }
 
 /// Retrieve a list of all quotes without filtering.
 #[instrument(skip(client))]
 pub async fn list_all(client: &Client) -> Result<Vec<Quote>> {
-    Quote::list(client, ListParameters::default()).await
+    list(client, ListParameters::default()).await
 }
 
 /// Retrieve a single quote by ID
 #[instrument(skip(client))]
 pub async fn get(client: &Client, quote_id: Uuid) -> Result<Quote> {
     let endpoint = XeroEndpoint::Custom(vec!["Quotes".to_string(), quote_id.to_string()]);
-
-    let endpoint_clone = endpoint.clone();
-    let empty_tuple = ();
-    let response: ListResponse = client.get_endpoint(endpoint, &empty_tuple).await?;
+    let query = client.unitdp_query();
+    let response: ListResponse = client.get_endpoint(endpoint.clone(), &query).await?;
 
     response.quotes.into_iter().next().ok_or(Error::NotFound {
         entity: "Quote".to_string(),
-        url: endpoint_clone.to_string(),
+        url: endpoint.to_string(),
         status_code: reqwest::StatusCode::NOT_FOUND,
         response_body: Some(format!("Quote with ID {quote_id} not found")),
         span_trace: SpanTrace::capture(),
@@ -383,17 +386,14 @@ pub async fn get(client: &Client, quote_id: Uuid) -> Result<Quote> {
 
 /// Create one or more quotes.
 #[instrument(skip(client, quote))]
-pub async fn create(
-    client: &Client,
-    quote: &QuoteBuilder,
-    options: &crate::MutationOptions,
-) -> Result<Quote> {
+pub async fn create(client: &Client, quote: &QuoteBuilder) -> Result<Quote> {
     let request = QuoteWrapper {
         quotes: vec![quote],
     };
+    let options = client.mutation_options();
 
     let response: MutationResponse = client
-        .put_endpoint_with_options(XeroEndpoint::Quotes, &request, options)
+        .put_endpoint_with_options(XeroEndpoint::Quotes, &request, &options)
         .await?;
 
     // Extract quote from response
@@ -412,17 +412,14 @@ pub async fn create(
 
 /// Update or create one or more quotes.
 #[instrument(skip(client, quote))]
-pub async fn update_or_create(
-    client: &Client,
-    quote: &QuoteBuilder,
-    options: &crate::MutationOptions,
-) -> Result<Quote> {
+pub async fn update_or_create(client: &Client, quote: &QuoteBuilder) -> Result<Quote> {
     let request = QuoteWrapper {
         quotes: vec![quote],
     };
+    let options = client.mutation_options();
 
     let response: MutationResponse = client
-        .post_endpoint_with_options(XeroEndpoint::Quotes, &request, options)
+        .post_endpoint_with_options(XeroEndpoint::Quotes, &request, &options)
         .await?;
 
     // Extract quote from response
@@ -441,22 +438,18 @@ pub async fn update_or_create(
 
 /// Update a specific quote.
 #[instrument(skip(client, quote))]
-pub async fn update(
-    client: &Client,
-    quote_id: Uuid,
-    quote: &QuoteBuilder,
-    options: &crate::MutationOptions,
-) -> Result<Quote> {
+pub async fn update(client: &Client, quote_id: Uuid, quote: &QuoteBuilder) -> Result<Quote> {
     let mut updatable_quote = quote.clone();
     updatable_quote.quote_id = Some(quote_id);
 
     let request = QuoteWrapper {
         quotes: vec![&updatable_quote],
     };
+    let options = client.mutation_options();
 
     let endpoint = XeroEndpoint::Quote(quote_id);
     let response: MutationResponse = client
-        .post_endpoint_with_options(endpoint.clone(), &request, options)
+        .post_endpoint_with_options(endpoint.clone(), &request, &options)
         .await?;
 
     // Extract quote from response
