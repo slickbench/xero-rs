@@ -587,6 +587,27 @@ pub enum Error {
         /// Captured span trace for async context
         span_trace: SpanTrace,
     },
+
+    /// Xero returned a server error (HTTP 5xx) without a parseable API error body.
+    ///
+    /// This typically indicates a transient Xero outage. The raw response body is
+    /// preserved for debugging since it often lacks the standard `Type` field
+    /// required by [`Response`].
+    #[error("Xero server error (HTTP {status_code}): {message}")]
+    #[diagnostic(
+        code(xero_rs::server_error),
+        help(
+            "Xero returned a server error. This is typically transient - retry after a short delay."
+        )
+    )]
+    ServerError {
+        status_code: reqwest::StatusCode,
+        message: String,
+        response_body: Option<String>,
+        url: String,
+        /// Captured span trace for async context
+        span_trace: SpanTrace,
+    },
 }
 
 impl Error {
@@ -658,6 +679,7 @@ impl Error {
             Self::DeserializationError { response_body, .. } => Some(response_body),
             Self::NotFound { response_body, .. } => response_body.as_deref(),
             Self::RateLimitExceeded { response_body, .. } => response_body.as_deref(),
+            Self::ServerError { response_body, .. } => response_body.as_deref(),
             _ => None,
         }
     }
@@ -669,6 +691,7 @@ impl Error {
             Self::DeserializationError { url, .. } => Some(url),
             Self::NotFound { url, .. } => Some(url),
             Self::RateLimitExceeded { url, .. } => Some(url),
+            Self::ServerError { url, .. } => Some(url),
             _ => None,
         }
     }
@@ -680,6 +703,7 @@ impl Error {
             Self::DeserializationError { context, .. } => Some(context.status_code),
             Self::NotFound { status_code, .. } => Some(*status_code),
             Self::RateLimitExceeded { status_code, .. } => Some(*status_code),
+            Self::ServerError { status_code, .. } => Some(*status_code),
             _ => None,
         }
     }
@@ -717,6 +741,7 @@ impl Error {
             Self::NotFound { span_trace, .. } => Some(span_trace),
             Self::API { span_trace, .. } => Some(span_trace),
             Self::RateLimitExceeded { span_trace, .. } => Some(span_trace),
+            Self::ServerError { span_trace, .. } => Some(span_trace),
             _ => None,
         }
     }

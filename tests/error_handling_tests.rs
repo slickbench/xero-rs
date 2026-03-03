@@ -1,5 +1,5 @@
 use serde_json::json;
-use xero_rs::error::{ErrorType, Response as ErrorResponse};
+use xero_rs::error::{self, ErrorType, Response as ErrorResponse};
 
 #[test]
 fn test_query_parse_exception_handling() {
@@ -164,4 +164,80 @@ fn test_all_error_types_deserialize() {
             result.err()
         );
     }
+}
+
+/// Xero 500 responses often lack the "Type" field, so error::Response
+/// deserialization fails. The client catch-all for 5xx should detect this
+/// and produce Error::ServerError instead of Error::DeserializationError.
+#[test]
+fn test_500_without_type_field_fails_to_parse_as_error_response() {
+    // Realistic Xero 500 body — no Type field
+    let body = json!({
+        "Message": "An error occurred",
+        "ErrorNumber": 0
+    });
+
+    let result: Result<ErrorResponse, _> = serde_json::from_value(body);
+    assert!(
+        result.is_err(),
+        "Expected error::Response to fail without Type field, but it parsed: {:?}",
+        result.unwrap()
+    );
+}
+
+/// When a 5xx response DOES include a valid Type field, the client should
+/// still parse it as Error::API (existing behaviour).
+#[test]
+fn test_500_with_type_field_parses_as_error_response() {
+    let body = json!({
+        "Type": "InternalServerException",
+        "ErrorNumber": 23,
+        "Message": "An internal error occurred"
+    });
+
+    let result: Result<ErrorResponse, _> = serde_json::from_value(body);
+    assert!(
+        result.is_ok(),
+        "error::Response should parse 500 with valid Type: {:?}",
+        result.err()
+    );
+
+    let response = result.unwrap();
+    assert!(
+        matches!(response.error, ErrorType::InternalServerException),
+        "Expected InternalServerException, got {:?}",
+        response.error
+    );
+}
+
+/// Verify ServerError variant fields are accessible via accessor methods.
+#[test]
+fn test_server_error_variant_accessors() {
+    use tracing_error::SpanTrace;
+
+    let error = error::Error::ServerError {
+        status_code: reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+        message: "Something went wrong".to_string(),
+        response_body: Some(r#"{"Message":"Something went wrong"}"#.to_string()),
+        url: "https://api.xero.com/api.xro/2.0/Quotes".to_string(),
+        span_trace: SpanTrace::capture(),
+    };
+
+    assert_eq!(
+        error.status_code(),
+        Some(reqwest::StatusCode::INTERNAL_SERVER_ERROR)
+    );
+    assert_eq!(error.url(), Some("https://api.xero.com/api.xro/2.0/Quotes"));
+    assert!(error.response_body().is_some());
+    assert!(error.span_trace().is_some());
+
+    let display = format!("{error}");
+    assert!(
+        display.contains("500"),
+        "Display should include status code: {display}"
+    );
+    assert!(
+        display.contains("Something went wrong"),
+        "Display should include message: {display}"
+    );
 }

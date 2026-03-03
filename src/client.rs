@@ -1371,6 +1371,49 @@ impl Client {
                         }
                     }
                 }
+                status if status.is_server_error() => {
+                    match serde_json::from_str::<error::Response>(&text) {
+                        Ok(api_error) => Err(Error::API {
+                            response: api_error,
+                            span_trace: SpanTrace::capture(),
+                        }),
+                        Err(_) => {
+                            // 5xx without a standard Type field — extract a message
+                            // from common JSON fields, or fall back to the status text
+                            let message = serde_json::from_str::<serde_json::Value>(&text)
+                                .ok()
+                                .and_then(|v| {
+                                    v.get("Message")
+                                        .or_else(|| v.get("message"))
+                                        .or_else(|| v.get("Detail"))
+                                        .or_else(|| v.get("detail"))
+                                        .and_then(|m| m.as_str().map(String::from))
+                                })
+                                .unwrap_or_else(|| {
+                                    status
+                                        .canonical_reason()
+                                        .unwrap_or("Unknown server error")
+                                        .to_string()
+                                });
+
+                            tracing::error!(
+                                url = %url,
+                                status = %status,
+                                message = %message,
+                                response_body = %text,
+                                "Xero server error (5xx) with non-standard response body"
+                            );
+
+                            Err(Error::ServerError {
+                                status_code: status,
+                                message,
+                                response_body: Some(text),
+                                url,
+                                span_trace: SpanTrace::capture(),
+                            })
+                        }
+                    }
+                }
                 _ => match serde_json::from_str::<error::Response>(&text) {
                     Ok(api_error) => Err(Error::API {
                         response: api_error,
