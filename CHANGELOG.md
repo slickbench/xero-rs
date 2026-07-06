@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0-alpha.25]
+
+### Added
+- Payroll Pay Runs API (`Client::pay_runs()`): `list()`, `get(id)` (with payslip summaries), and `create(payroll_calendar_id)`
+- Payroll Payslips API (`Client::payslips()`): `get(id)` (full payslip) and `update_earnings(id, lines)`
+- `PayRun`, `PayslipSummary`, `CreatePayRun`, `PayRunResponse` entities (`payroll::pay_run`), with pay-period dates parsed from Xero's `/Date()/` format
+- Full `Payslip` entity (`payroll::payslip`) capturing summary totals (wages, deductions, reimbursements, tax, super, net pay) and every line array (earnings, timesheet earnings, leave earnings, deductions, reimbursements, superannuation, tax, leave accrual)
+- `EarningsLine::units(rate_id, number_of_units)` helper for fixed-rate earnings updates (e.g. per-km motor vehicle allowance)
+
 ## [0.2.0-alpha.23] - 2026-02-07
 
 ### Added

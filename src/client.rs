@@ -31,6 +31,8 @@ use crate::oauth::{KeyPair, OAuthClient};
 use crate::payroll::{
     employee::{self, Employee},
     leave_application::{self, LeaveApplication, PostLeaveApplication},
+    pay_run::{self, CreatePayRun, PayRun},
+    payslip::{self, EarningsLine, Payslip, UpdatePayslip},
     settings::{
         earnings_rates::{self, EarningsRate},
         leave_types::LeaveType,
@@ -1487,6 +1489,18 @@ impl Client {
         PayCalendarsApi { client: self }
     }
 
+    /// Access the pay runs API
+    #[must_use]
+    pub fn pay_runs(&self) -> PayRunsApi<'_> {
+        PayRunsApi { client: self }
+    }
+
+    /// Access the payslips API
+    #[must_use]
+    pub fn payslips(&self) -> PayslipsApi<'_> {
+        PayslipsApi { client: self }
+    }
+
     /// Access the items API
     #[must_use]
     pub fn items(&self) -> ItemsApi<'_> {
@@ -2119,6 +2133,125 @@ impl PayCalendarsApi<'_> {
         }
 
         Ok(response.payroll_calendars.into_iter().next().unwrap())
+    }
+}
+
+/// API client for interacting with Xero Payroll Pay Runs
+///
+/// Provides methods to list, retrieve and create pay runs.
+pub struct PayRunsApi<'a> {
+    client: &'a Client,
+}
+
+impl PayRunsApi<'_> {
+    /// Retrieve all pay runs.
+    ///
+    /// The list endpoint returns pay runs with their period dates and status,
+    /// but without the full payslip detail (use [`Self::get`] for that).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the API request fails.
+    #[instrument(skip(self))]
+    pub async fn list(&self) -> Result<Vec<PayRun>> {
+        let url = "https://api.xero.com/payroll.xro/1.0/PayRuns";
+        let response: pay_run::PayRunResponse = self.client.get(url, &()).await?;
+        Ok(response.pay_runs)
+    }
+
+    /// Retrieve a single pay run by ID, including its payslip summaries.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the pay run is not found or the request fails.
+    #[instrument(skip(self))]
+    pub async fn get(&self, pay_run_id: Uuid) -> Result<PayRun> {
+        let url = format!("https://api.xero.com/payroll.xro/1.0/PayRuns/{pay_run_id}");
+        let response: pay_run::PayRunResponse = self.client.get(&url, &()).await?;
+
+        response
+            .pay_runs
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::NotFound {
+                entity: "PayRun".to_string(),
+                url,
+                status_code: StatusCode::NOT_FOUND,
+                response_body: Some(format!("Pay Run with ID {pay_run_id} not found")),
+                span_trace: SpanTrace::capture(),
+            })
+    }
+
+    /// Create a new pay run for a payroll calendar.
+    ///
+    /// Xero derives the pay period dates from the calendar automatically.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or no pay run is returned.
+    #[instrument(skip(self))]
+    pub async fn create(&self, payroll_calendar_id: Uuid) -> Result<PayRun> {
+        let url = "https://api.xero.com/payroll.xro/1.0/PayRuns";
+        let request = vec![CreatePayRun {
+            payroll_calendar_id,
+        }];
+        let response: pay_run::PayRunResponse = self.client.post(url, &request).await?;
+
+        response
+            .pay_runs
+            .into_iter()
+            .next()
+            .ok_or_else(|| Error::NotFound {
+                entity: "PayRun".to_string(),
+                url: url.to_string(),
+                status_code: StatusCode::OK,
+                response_body: Some("No pay run was returned after creation".to_string()),
+                span_trace: SpanTrace::capture(),
+            })
+    }
+}
+
+/// API client for interacting with Xero Payroll Payslips
+///
+/// Provides methods to retrieve a payslip and update its earnings lines.
+pub struct PayslipsApi<'a> {
+    client: &'a Client,
+}
+
+impl PayslipsApi<'_> {
+    /// Retrieve a full payslip by ID.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    #[instrument(skip(self))]
+    pub async fn get(&self, payslip_id: Uuid) -> Result<Payslip> {
+        let url = format!("https://api.xero.com/payroll.xro/1.0/Payslip/{payslip_id}");
+        let response: payslip::PayslipResponse = self.client.get(&url, &()).await?;
+        Ok(response.payslip)
+    }
+
+    /// Update a payslip's earnings lines.
+    ///
+    /// Earnings lines are merged by earnings rate; lines not supplied are left
+    /// untouched. For fixed-rate items only the rate ID and unit count are used.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    #[instrument(skip(self, earnings_lines))]
+    pub async fn update_earnings(
+        &self,
+        payslip_id: Uuid,
+        earnings_lines: Vec<EarningsLine>,
+    ) -> Result<Payslip> {
+        let url = format!("https://api.xero.com/payroll.xro/1.0/Payslip/{payslip_id}");
+        let request = UpdatePayslip {
+            payslip_id,
+            earnings_lines,
+        };
+        let response: payslip::PayslipResponse = self.client.post(&url, &request).await?;
+        Ok(response.payslip)
     }
 }
 

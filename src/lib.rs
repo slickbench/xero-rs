@@ -141,3 +141,10 @@ pub use payroll::leave_application::{
 
 // Re-export Leave Type for convenience
 pub use payroll::settings::leave_types::LeaveType;
+
+// Re-export Pay Run and Payslip types for convenience
+pub use payroll::pay_run::{CreatePayRun, PayRun, PayRunResponse, PayslipSummary};
+pub use payroll::payslip::{
+    DeductionLine, EarningsLine, LeaveAccrualLine, Payslip, ReimbursementLine, SuperannuationLine,
+    TaxLine, UpdatePayslip,
+};
