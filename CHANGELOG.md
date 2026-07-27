@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0-alpha.26]
+
+### Added
+- `Client::with_rate_limit(calls_per_minute)` / `without_rate_limit()`: client-side sliding-window pacing for Xero's 60 calls/min per-tenant limit. Reacting to a 429 after the fact does not stop concurrent tasks sharing a tenant from exhausting the budget together, so requests are now paced before they are sent.
+
+### Changed
+- Rate-limit retries now add up to 1s of jitter to the `Retry-After` wait. Without it, every task rate limited in the same window woke on the same tick and immediately re-exhausted the limit.
+
 ## [0.2.0-alpha.25]
 
 ### Added

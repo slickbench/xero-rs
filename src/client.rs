@@ -1,8 +1,9 @@
 use core::fmt;
 use std::borrow::Cow;
+use std::collections::VecDeque;
 use std::str::FromStr;
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use oauth2::{
     AccessToken, AuthorizationCode, CsrfToken, HttpClientError, RefreshToken, TokenResponse,
@@ -137,6 +138,76 @@ impl TokenState {
     }
 }
 
+/// Pseudo-random fraction in `[0, 1)` derived from the clock.
+///
+/// Used only to spread retry wake-ups; concurrent callers land on different
+/// nanosecond readings, which is all that is needed to break lockstep. Avoids
+/// taking a dependency on an RNG for this.
+fn jitter_fraction() -> f64 {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| d.subsec_nanos());
+    f64::from(nanos % 1_000_000) / 1_000_000.0
+}
+
+/// Sliding-window limiter for Xero's per-minute call ceiling.
+///
+/// Xero reports the remaining budget in `X-MinLimit-Remaining`, but that only
+/// arrives with a response - too late to stop a burst that is already in
+/// flight. This paces calls before they are sent instead.
+#[derive(Debug)]
+pub(crate) struct RateLimiter {
+    max_per_window: usize,
+    window: Duration,
+    /// Send times of calls still inside the window, oldest first.
+    recent: Mutex<VecDeque<Instant>>,
+}
+
+impl RateLimiter {
+    pub(crate) fn new(max_per_window: usize, window: Duration) -> Self {
+        Self {
+            max_per_window: max_per_window.max(1),
+            window,
+            recent: Mutex::new(VecDeque::new()),
+        }
+    }
+
+    /// Wait until another call fits inside the window, then record it.
+    pub(crate) async fn acquire(&self) {
+        loop {
+            let wait = {
+                let mut recent = self.recent.lock().expect("rate limiter mutex poisoned");
+                let now = Instant::now();
+
+                while recent
+                    .front()
+                    .is_some_and(|sent| now.duration_since(*sent) >= self.window)
+                {
+                    recent.pop_front();
+                }
+
+                if recent.len() < self.max_per_window {
+                    recent.push_back(now);
+                    return;
+                }
+
+                // Full: the oldest call has to age out before a slot frees up.
+                let oldest = *recent.front().expect("checked non-empty");
+                self.window.saturating_sub(now.duration_since(oldest))
+            };
+
+            // Jitter so waiters released by the same expiry do not all retry on
+            // the same tick and immediately refill the window.
+            let jitter = Duration::from_millis((jitter_fraction() * 250.0) as u64);
+            tracing::debug!(
+                wait_ms = (wait + jitter).as_millis() as u64,
+                "Xero rate limit window full, pacing request"
+            );
+            sleep(wait + jitter).await;
+        }
+    }
+}
+
 /// This is the client that is used for interacting with the Xero API. It handles OAuth 2 authentication
 /// and context (the current tenant).
 #[derive(Debug, Clone)]
@@ -155,6 +226,13 @@ pub struct Client {
     /// When set via `with_concurrency_limit()`, the client will ensure
     /// that no more than the specified number of requests are in flight.
     concurrency_limiter: Option<Arc<tokio::sync::Semaphore>>,
+    /// Optional client-side limiter for Xero's per-minute call ceiling.
+    ///
+    /// Xero allows 60 calls per minute per tenant. Reacting to a 429 after the
+    /// fact is not enough when several tasks share a tenant: they exhaust the
+    /// budget together, then retry together. When set via `with_rate_limit()`,
+    /// calls are paced to stay inside the window instead.
+    rate_limiter: Option<Arc<RateLimiter>>,
     /// Default unit decimal places for line item amounts.
     /// Applied automatically to all applicable endpoints (invoices, items, quotes).
     default_unitdp: Option<UnitDp>,
@@ -257,6 +335,7 @@ impl Client {
             tenant_id: Arc::new(RwLock::new(None)),
             refresh_credentials: None,
             concurrency_limiter: None,
+            rate_limiter: None,
             default_unitdp: None,
         })
     }
@@ -293,6 +372,7 @@ impl Client {
             tenant_id: Arc::new(RwLock::new(None)),
             refresh_credentials: None,
             concurrency_limiter: None,
+            rate_limiter: None,
             default_unitdp: None,
         })
     }
@@ -478,6 +558,42 @@ impl Client {
         self
     }
 
+    /// Pace requests to stay within Xero's per-minute call limit.
+    ///
+    /// Xero allows 60 calls per minute per tenant and returns 429 once that is
+    /// exceeded. Retrying after the fact recovers a single call but does not
+    /// stop a burst from overrunning the limit repeatedly, so callers that fan
+    /// out across a tenant should set this. Leave a little headroom below 60 for
+    /// calls made by other processes against the same tenant.
+    ///
+    /// # Example
+    /// ```no_run
+    /// # use xero_rs::{Client, KeyPair};
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let key_pair = KeyPair::from_env();
+    /// let client = Client::from_client_credentials(key_pair.clone(), None)
+    ///     .await?
+    ///     .with_concurrency_limit(5)
+    ///     .with_rate_limit(55);
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn with_rate_limit(mut self, calls_per_minute: usize) -> Self {
+        self.rate_limiter = Some(Arc::new(RateLimiter::new(
+            calls_per_minute,
+            Duration::from_secs(60),
+        )));
+        self
+    }
+
+    /// Disable client-side rate limiting.
+    #[must_use]
+    pub fn without_rate_limit(mut self) -> Self {
+        self.rate_limiter = None;
+        self
+    }
+
     /// Set default unit decimal places for all applicable endpoints.
     ///
     /// When set, this value is automatically applied to all endpoints that include
@@ -541,6 +657,12 @@ impl Client {
         &self,
         request: RequestBuilder,
     ) -> std::result::Result<reqwest::Response, reqwest::Error> {
+        // Pace before taking a concurrency permit, so waiting on the rate limit
+        // does not hold a permit that another request could be using.
+        if let Some(limiter) = &self.rate_limiter {
+            limiter.acquire().await;
+        }
+
         if let Some(semaphore) = &self.concurrency_limiter {
             let _permit = semaphore.acquire().await.expect("semaphore closed");
             request.send().await
@@ -605,7 +727,10 @@ impl Client {
             && *attempts < MAX_RETRY_ATTEMPTS
         {
             *attempts += 1;
-            let wait_time = retry_after.unwrap_or(Duration::from_secs(60));
+            let base_wait = retry_after.unwrap_or(Duration::from_secs(60));
+            // Without jitter, every task rate limited in the same window wakes on
+            // the same tick and re-exhausts the limit together.
+            let wait_time = base_wait + Duration::from_millis((jitter_fraction() * 1_000.0) as u64);
 
             tracing::warn!(
                 attempt = *attempts,
@@ -2463,5 +2588,61 @@ impl LeaveTypesApi<'_> {
             .get(earnings_rates::ENDPOINT, &empty_vec)
             .await?;
         Ok(response.pay_items.leave_types)
+    }
+}
+
+#[cfg(test)]
+mod rate_limiter_tests {
+    use super::RateLimiter;
+    use std::time::{Duration, Instant};
+
+    #[tokio::test]
+    async fn allows_calls_up_to_the_window_limit_without_waiting() {
+        let limiter = RateLimiter::new(5, Duration::from_secs(60));
+
+        let started = Instant::now();
+        for _ in 0..5 {
+            limiter.acquire().await;
+        }
+
+        assert!(
+            started.elapsed() < Duration::from_millis(100),
+            "calls inside the limit must not be paced"
+        );
+    }
+
+    #[tokio::test]
+    async fn paces_the_call_that_exceeds_the_window() {
+        // Short window so the test stays fast; the behaviour is the same at 60s.
+        let limiter = RateLimiter::new(2, Duration::from_millis(300));
+
+        limiter.acquire().await;
+        limiter.acquire().await;
+
+        let started = Instant::now();
+        limiter.acquire().await;
+        let waited = started.elapsed();
+
+        assert!(
+            waited >= Duration::from_millis(250),
+            "third call should wait for the window to roll over, waited {waited:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn slots_are_reusable_once_the_window_rolls_over() {
+        let limiter = RateLimiter::new(2, Duration::from_millis(200));
+
+        limiter.acquire().await;
+        limiter.acquire().await;
+        tokio::time::sleep(Duration::from_millis(350)).await;
+
+        let started = Instant::now();
+        limiter.acquire().await;
+
+        assert!(
+            started.elapsed() < Duration::from_millis(100),
+            "expired entries must free their slots"
+        );
     }
 }
