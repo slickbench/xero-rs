@@ -41,6 +41,17 @@ use crate::error::{Error, ErrorType, RateLimitType};
 impl<'a> From<&'a Error> for Breadcrumb {
     fn from(error: &'a Error) -> Self {
         let (category, message, data) = match error {
+            Error::InvalidParameter(message) => {
+                ("xero.validation", message.clone(), BTreeMap::new())
+            }
+            Error::ServerError {
+                status_code, url, ..
+            } => {
+                let mut data = BTreeMap::new();
+                data.insert("url".to_string(), Value::from(url.clone()));
+                data.insert("status_code".to_string(), Value::from(status_code.as_u16()));
+                ("http.response", "Xero server error".to_string(), data)
+            }
             Error::Request { source, .. } => (
                 "http.request",
                 format!("HTTP request error: {source}"),

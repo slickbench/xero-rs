@@ -22,6 +22,8 @@
 //! # }
 //! ```
 
+use std::collections::HashSet;
+
 use serde::{Deserialize, Serialize};
 use time::{Date, OffsetDateTime};
 use tracing::{debug, error, info};
@@ -109,7 +111,7 @@ pub struct LeavePeriod {
 }
 
 /// Parameters for filtering leave application list results
-#[derive(Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct ListParameters {
     /// Filter by employee ID
     pub employee_id: Option<Uuid>,
@@ -139,8 +141,21 @@ impl ListParameters {
             clauses.push(format!("EmployeeID==Guid(\"{}\")", employee_id));
         }
 
+        for (field, comparison, date) in [
+            ("StartDate", ">=", self.start_date),
+            ("EndDate", "<=", self.end_date),
+        ] {
+            if let Some(date) = date {
+                clauses.push(format!(
+                    "{field}{comparison}DateTime({},{},{})",
+                    date.year(),
+                    date.month() as u8,
+                    date.day()
+                ));
+            }
+        }
         if let Some(filter) = &self.where_filter {
-            clauses.push(filter.clone());
+            clauses.push(format!("({filter})"));
         }
 
         if clauses.is_empty() {
@@ -312,63 +327,58 @@ impl LeaveApplication {
         parameters: Option<&ListParameters>,
         modified_after: Option<String>,
     ) -> Result<Vec<LeaveApplication>> {
-        debug!("GET URL: {}", url);
-
-        let mut request = client.build_request(reqwest::Method::GET, url).await;
-
-        if let Some(date) = modified_after {
-            request = request.header("If-Modified-Since", date);
+        if parameters.and_then(|p| p.page).is_some_and(|page| page < 1) {
+            return Err(crate::Error::InvalidParameter(
+                "page must be positive".into(),
+            ));
         }
-
-        if let Some(params) = parameters {
-            for (key, value) in params.to_query_params() {
-                request = request.query(&[(key, value)]);
-            }
-        }
-
-        let response = request.send().await?;
-        let status = response.status();
-
-        if !status.is_success() {
-            error!("Error listing leave applications: HTTP status {}", status);
-            let text = response.text().await?;
-
-            // Handle 403 Forbidden explicitly
-            if status == reqwest::StatusCode::FORBIDDEN {
-                // Try to deserialize as ForbiddenResponse, or create a generic API error
-                if let Ok(forbidden) =
-                    serde_json::from_str::<crate::error::ForbiddenResponse>(&text)
-                {
-                    return Err(crate::error::Error::Forbidden(Box::new(forbidden)));
-                }
-                // Fall back to generic API error if can't parse as ForbiddenResponse
-                return Err(crate::error::Error::API {
-                    response: crate::error::Response {
-                        error_number: Some(403),
-                        status: Some(403),
-                        title: Some("Forbidden".to_string()),
-                        message: Some("Forbidden - check payroll scopes".to_string()),
-                        detail: Some(text),
-                        instance: None,
-                        error: crate::error::ErrorType::Other("Forbidden".to_string()),
-                    },
-                    span_trace: SpanTrace::capture(),
-                });
-            }
-
-            return Err(crate::error::Error::API {
-                response: serde_json::from_str(&text)?,
-                span_trace: SpanTrace::capture(),
-            });
-        }
-
-        let response: LeaveApplicationResponse = response.json().await?;
-
-        debug!(
-            "Response contains {} leave applications",
-            response.leave_applications.len()
-        );
+        let modified_since = modified_after
+            .as_deref()
+            .map(crate::utils::date_format::parse_dotnet_datetime)
+            .transpose()
+            .map_err(|_| {
+                crate::Error::InvalidParameter("modified_after must be an ISO8601 timestamp".into())
+            })?;
+        let query = parameters
+            .map(ListParameters::to_query_params)
+            .unwrap_or_default();
+        let response: LeaveApplicationResponse = client
+            .get_with_modified_since(url, &query, modified_since)
+            .await?;
         Ok(response.leave_applications)
+    }
+
+    /// Retrieve a complete, unfiltered snapshot of all V2 applications.
+    pub async fn list_all_v2(client: &crate::Client) -> Result<Vec<LeaveApplication>> {
+        Self::list_all_from(client, ENDPOINT_V2).await
+    }
+
+    async fn list_all_from(client: &crate::Client, url: &str) -> Result<Vec<LeaveApplication>> {
+        let mut applications = Vec::new();
+        let mut seen = HashSet::new();
+        let mut page = 1_i32;
+        loop {
+            let parameters = ListParameters {
+                page: Some(page),
+                order: Some("LeaveApplicationID ASC".into()),
+                ..Default::default()
+            };
+            let batch = Self::list_internal(client, url, Some(&parameters), None).await?;
+            if batch.is_empty() {
+                return Ok(applications);
+            }
+            for application in batch {
+                if !seen.insert(application.leave_application_id) {
+                    return Err(crate::Error::InvalidParameter(
+                        "leave pagination repeated an application; retry the snapshot".into(),
+                    ));
+                }
+                applications.push(application);
+            }
+            page = page.checked_add(1).ok_or_else(|| {
+                crate::Error::InvalidParameter("leave page limit exceeded".into())
+            })?;
+        }
     }
 
     /// Get a single leave application by ID
@@ -582,5 +592,186 @@ impl LeaveApplication {
         }
 
         Ok(response.leave_applications.into_iter().next().unwrap())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use std::collections::HashMap;
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    use time::macros::date;
+    use warp::Filter;
+
+    fn application(id: u128) -> serde_json::Value {
+        json!({
+            "LeaveApplicationID": Uuid::from_u128(id),
+            "EmployeeID": Uuid::nil(), "LeaveTypeID": Uuid::nil(),
+            "StartDate": "/Date(1791072000000+0000)/", "EndDate": "2026-10-06",
+            "LeavePeriods": [{"LeavePeriodStatus": "REQUESTED", "NumberOfUnits": 7.6}]
+        })
+    }
+
+    #[test]
+    fn date_filters_are_encoded_and_custom_disjunction_is_grouped() {
+        let parameters = ListParameters {
+            employee_id: Some(Uuid::nil()),
+            start_date: Some(date!(2026 - 09 - 10)),
+            end_date: Some(date!(2026 - 10 - 01)),
+            where_filter: Some("A==1 OR B==2".into()),
+            page: Some(2),
+            ..Default::default()
+        };
+        let query = parameters.to_query_params();
+        assert_eq!(
+            query[0],
+            (
+                "where",
+                format!(
+                    "EmployeeID==Guid(\"{}\") AND StartDate>=DateTime(2026,9,10) AND EndDate<=DateTime(2026,10,1) AND (A==1 OR B==2)",
+                    Uuid::nil()
+                )
+            )
+        );
+        assert_eq!(query[1], ("page", "2".into()));
+    }
+
+    #[tokio::test]
+    async fn all_pages_are_fetched_and_requested_status_is_preserved() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = calls.clone();
+        let route = warp::query::<HashMap<String, String>>()
+            .and(warp::header::<String>("authorization"))
+            .and(warp::header::<String>("xero-tenant-id"))
+            .map(
+                move |query: HashMap<String, String>, authorization: String, tenant: String| {
+                    assert_eq!(authorization, "Bearer test-token");
+                    assert_eq!(tenant, Uuid::nil().to_string());
+                    assert_eq!(query["order"], "LeaveApplicationID ASC");
+                    counted.fetch_add(1, Ordering::SeqCst);
+                    let records: Vec<_> = match query["page"].as_str() {
+                        "1" => (1..=100).map(application).collect(),
+                        "2" => vec![application(101)],
+                        "3" => vec![],
+                        _ => panic!("unexpected page"),
+                    };
+                    warp::reply::json(&json!({"LeaveApplications": records}))
+                },
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/leave", listener.local_addr().unwrap());
+        let server = tokio::spawn(warp::serve(route).incoming(listener).run());
+        let result = LeaveApplication::list_all_from(&crate::client::leave_test_client(), &url)
+            .await
+            .unwrap();
+        server.abort();
+        assert_eq!(result.len(), 101);
+        assert_eq!(calls.load(Ordering::SeqCst), 3);
+        assert_eq!(
+            result[0].leave_periods.as_ref().unwrap()[0].leave_period_status,
+            Some(LeavePeriodStatus::Requested)
+        );
+    }
+
+    #[tokio::test]
+    async fn repeated_page_fails_instead_of_returning_partial_snapshot() {
+        let route =
+            warp::any().map(|| warp::reply::json(&json!({"LeaveApplications": [application(1)]})));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/leave", listener.local_addr().unwrap());
+        let server = tokio::spawn(warp::serve(route).incoming(listener).run());
+        let result =
+            LeaveApplication::list_all_from(&crate::client::leave_test_client(), &url).await;
+        server.abort();
+        assert!(matches!(result, Err(crate::Error::InvalidParameter(_))));
+    }
+
+    #[tokio::test]
+    async fn later_page_failure_does_not_return_first_page() {
+        let route =
+            warp::query::<HashMap<String, String>>().map(|query: HashMap<String, String>| {
+                let (body, status) = if query["page"] == "1" {
+                    (
+                        json!({"LeaveApplications": [application(1)]}),
+                        warp::http::StatusCode::OK,
+                    )
+                } else {
+                    (
+                        json!({"Type":"QueryParseException", "Message":"invalid query"}),
+                        warp::http::StatusCode::BAD_REQUEST,
+                    )
+                };
+                warp::reply::with_status(warp::reply::json(&body), status)
+            });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/leave", listener.local_addr().unwrap());
+        let server = tokio::spawn(warp::serve(route).incoming(listener).run());
+        let result =
+            LeaveApplication::list_all_from(&crate::client::leave_test_client(), &url).await;
+        server.abort();
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn modification_header_and_rate_limit_retry_use_shared_client() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let counted = calls.clone();
+        let route = warp::header::<String>("if-modified-since").map(move |modified: String| {
+            assert!(modified.starts_with("2026-09-10T00:00:00"));
+            let status = if counted.fetch_add(1, Ordering::SeqCst) == 0 {
+                warp::http::StatusCode::TOO_MANY_REQUESTS
+            } else {
+                warp::http::StatusCode::OK
+            };
+            warp::reply::with_header(
+                warp::reply::with_status(
+                    warp::reply::json(&json!({"LeaveApplications": []})),
+                    status,
+                ),
+                "Retry-After",
+                "0",
+            )
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/leave", listener.local_addr().unwrap());
+        let server = tokio::spawn(warp::serve(route).incoming(listener).run());
+        let result = LeaveApplication::list_internal(
+            &crate::client::leave_test_client(),
+            &url,
+            None,
+            Some("2026-09-10T10:00:00+10:00".into()),
+        )
+        .await
+        .unwrap();
+        server.abort();
+        assert!(result.is_empty());
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn invalid_parameters_fail_before_network_request() {
+        let client = crate::client::leave_test_client();
+        let parameters = ListParameters {
+            page: Some(0),
+            ..Default::default()
+        };
+        assert!(matches!(
+            LeaveApplication::list_internal(&client, "invalid", Some(&parameters), None).await,
+            Err(crate::Error::InvalidParameter(_))
+        ));
+        assert!(matches!(
+            LeaveApplication::list_internal(
+                &client,
+                "invalid",
+                None,
+                Some("not a timestamp".into())
+            )
+            .await,
+            Err(crate::Error::InvalidParameter(_))
+        ));
     }
 }

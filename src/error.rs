@@ -444,6 +444,9 @@ fn format_oauth2_error(
 /// Errors that can occur when interacting with the Xero API.
 #[derive(Debug, Error, Diagnostic)]
 pub enum Error {
+    #[error("invalid request parameter: {0}")]
+    InvalidParameter(String),
+
     #[error("error making request: {source:?}")]
     #[diagnostic(
         code(xero_rs::request_error),

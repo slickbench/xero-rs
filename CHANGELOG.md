@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0-alpha.27]
+
+- Add `leave_applications().list_all_v2()` to fetch complete snapshots with duplicate-page detection.
+- Apply leave date filters and preserve grouping of custom WHERE clauses.
+- Send leave reads through shared token refresh, concurrency and rate-limit handling.
+- Add `Client::get_with_modified_since` for payroll URLs and normalize modification timestamps to UTC.
+- Complete optional Sentry error matching for server and request-parameter errors.
+
+
 ## [0.2.0-alpha.26]
 
 ### Added

@@ -783,6 +783,7 @@ impl Client {
             if let Some(modified_since) = if_modified_since {
                 // Format as ISO 8601 UTC which Xero expects: yyyy-mm-ddThh:mm:ss
                 let formatted = modified_since
+                    .to_offset(time::UtcOffset::UTC)
                     .format(&time::format_description::well_known::Iso8601::DEFAULT)
                     .unwrap_or_else(|_| modified_since.to_string());
                 if let Ok(header_value) = header::HeaderValue::from_str(&formatted) {
@@ -1031,6 +1032,24 @@ impl Client {
         };
 
         self.execute_get(resolved_url, query).await
+    }
+
+    /// GET an absolute or relative URL through the shared retry and rate-limit path,
+    /// optionally supplying Xero's modification timestamp header.
+    pub async fn get_with_modified_since<R, Q>(
+        &self,
+        url: &str,
+        query: &Q,
+        modified_since: Option<time::OffsetDateTime>,
+    ) -> Result<R>
+    where
+        R: DeserializeOwned,
+        Q: Serialize,
+    {
+        let base = Url::parse(BASE_URL).map_err(|_| Error::InvalidEndpoint)?;
+        let url = base.join(url).map_err(|_| Error::InvalidEndpoint)?;
+        self.execute_get_with_modified_since(url, query, modified_since)
+            .await
     }
 
     /// Perform a `GET` request against the API using a typed `XeroEndpoint` with automatic retry.
@@ -2499,7 +2518,7 @@ impl LeaveApplicationsApi<'_> {
         LeaveApplication::list(self.client, parameters.as_ref(), modified_after).await
     }
 
-    /// List all leave applications (v2 endpoint)
+    /// List a page of leave applications with all statuses (v2 endpoint)
     ///
     /// This endpoint returns leave with all statuses: SCHEDULED, PROCESSED,
     /// REQUESTED (awaiting approval), and REJECTED.
@@ -2517,7 +2536,14 @@ impl LeaveApplicationsApi<'_> {
         LeaveApplication::list_v2(self.client, parameters.as_ref(), modified_after).await
     }
 
-    /// List all approved leave without filtering
+    /// Retrieve every page of V2 leave, including requested and rejected applications.
+    /// Fails rather than returning an incomplete snapshot if pagination repeats IDs.
+    pub async fn list_all_v2(&self) -> Result<Vec<LeaveApplication>> {
+        LeaveApplication::list_all_v2(self.client).await
+    }
+
+    /// List the first page of approved leave without filtering.
+    /// Use `list_all_v2` for a complete snapshot including all statuses.
     #[instrument(skip(self))]
     pub async fn list_all(&self) -> Result<Vec<LeaveApplication>> {
         self.list(None, None).await
@@ -2644,5 +2670,22 @@ mod rate_limiter_tests {
             started.elapsed() < Duration::from_millis(100),
             "expired entries must free their slots"
         );
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn leave_test_client() -> Client {
+    Client {
+        token_state: Arc::new(RwLock::new(TokenState {
+            access_token: AccessToken::new("test-token".into()),
+            refresh_token: None,
+            expires_at: None,
+            rate_limit_info: RateLimitInfo::default(),
+        })),
+        tenant_id: Arc::new(RwLock::new(Some(Uuid::nil()))),
+        refresh_credentials: None,
+        concurrency_limiter: None,
+        rate_limiter: None,
+        default_unitdp: None,
     }
 }
