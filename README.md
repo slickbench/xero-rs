@@ -43,7 +43,7 @@ use xero_rs::error::Result;
 fn do_something() -> Result<()> {
     // If this fails, you'll get a rich diagnostic error
     let client = xero_rs::Client::from_client_credentials(...)?;
-    
+
     // No need to call .into_diagnostic() when using xero_rs::error::Result
     Ok(())
 }
@@ -57,7 +57,7 @@ use miette::{Result, IntoDiagnostic};
 fn do_something() -> Result<()> {
     // Converting to miette's Result requires .into_diagnostic()
     let client = xero_rs::Client::from_client_credentials(...).into_diagnostic()?;
-    
+
     Ok(())
 }
 ```
@@ -89,3 +89,37 @@ This has been implemented so far:
   - Delete
   - Update or create
   - History records
+
+## Development checks
+
+Pull requests run deterministic unit, mock HTTP, serialization, and diagnostic
+tests without Xero credentials. Tests that contact a real tenant are explicitly
+ignored by default; they still compile and are checked by Clippy.
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --all-features --all-targets -- -D warnings
+cargo test --all-features
+cargo llvm-cov --all-features --lcov --output-path lcov.info
+pre-commit run --all-files
+```
+
+Install `cargo-llvm-cov` and the toolchain's `llvm-tools-preview` component to run
+coverage locally. CI uploads the resulting report to Codecov.
+
+Live integration tests need a configured Xero **sandbox** with the expected
+accounting/payroll scopes and fixture records. Some create or update records,
+send invoice emails, or wait for token expiry. Run a specific suite explicitly,
+using sandbox credentials from your shell or untracked local configuration:
+
+```sh
+: "${XERO_CLIENT_ID:?Set sandbox client ID}"
+: "${XERO_CLIENT_SECRET:?Set sandbox client secret}"
+: "${XERO_TENANT_ID:?Set sandbox tenant ID}"
+cargo test --test leave_application -- --ignored --test-threads=1
+```
+
+The large diagnostic error type and existing generic lifetime parameters are
+kept source-compatible with published clients. Narrow, documented Clippy
+exceptions cover those API choices and the two exhaustive diagnostic mappings;
+other warnings remain errors in CI.

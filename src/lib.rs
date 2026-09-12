@@ -48,6 +48,9 @@
 
 #![warn(clippy::pedantic)]
 #![allow(clippy::missing_errors_doc)]
+// Error variants expose rich diagnostic context in the published API. Boxing
+// those fields would break downstream pattern matching; retain their layout.
+#![allow(clippy::result_large_err)]
 
 #[macro_use]
 extern crate tracing;

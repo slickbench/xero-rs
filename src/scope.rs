@@ -59,7 +59,7 @@ pub enum ScopeType {
 
 impl ScopeType {
     /// Convert a `ScopeType` to its string representation
-    fn to_string(&self) -> String {
+    fn into_string(self) -> String {
         match self {
             // Accounting scopes
             Self::AccountingTransactions(Permission::ReadWrite) => "accounting.transactions",
@@ -216,7 +216,7 @@ impl Scope {
     pub fn from_types(scope_types: Vec<ScopeType>) -> Self {
         let scopes = scope_types
             .into_iter()
-            .map(|st| OAuth2Scope::new(st.to_string()))
+            .map(|st| OAuth2Scope::new(st.into_string()))
             .collect();
         Self { scopes }
     }
@@ -225,7 +225,7 @@ impl Scope {
     #[must_use]
     pub fn from_type(scope_type: ScopeType) -> Self {
         Self {
-            scopes: vec![OAuth2Scope::new(scope_type.to_string())],
+            scopes: vec![OAuth2Scope::new(scope_type.into_string())],
         }
     }
 
@@ -240,7 +240,7 @@ impl Scope {
     /// Add a scope to this collection
     #[must_use]
     pub fn with(mut self, scope_type: ScopeType) -> Self {
-        self.scopes.push(OAuth2Scope::new(scope_type.to_string()));
+        self.scopes.push(OAuth2Scope::new(scope_type.into_string()));
         self
     }
 
@@ -248,7 +248,7 @@ impl Scope {
     #[must_use]
     pub fn with_all(mut self, scope_types: impl IntoIterator<Item = ScopeType>) -> Self {
         for scope_type in scope_types {
-            self.scopes.push(OAuth2Scope::new(scope_type.to_string()));
+            self.scopes.push(OAuth2Scope::new(scope_type.into_string()));
         }
         self
     }
@@ -568,7 +568,7 @@ impl FromIterator<ScopeType> for Scope {
     fn from_iter<I: IntoIterator<Item = ScopeType>>(iter: I) -> Self {
         let scopes = iter
             .into_iter()
-            .map(|st| OAuth2Scope::new(st.to_string()))
+            .map(|st| OAuth2Scope::new(st.into_string()))
             .collect();
         Self { scopes }
     }

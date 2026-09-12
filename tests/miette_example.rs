@@ -33,6 +33,10 @@ async fn miette_integration_example() -> Result<()> {
     Ok(())
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "demonstrates the published unboxed error API"
+)]
 async fn create_client() -> xero_rs::error::Result<xero_rs::Client> {
     // This function simulates a client creation that could fail
     // Just returning our error type directly

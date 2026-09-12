@@ -77,7 +77,7 @@ async fn example_without_auto_refresh() -> Result<()> {
     let key_pair = KeyPair::from_env();
 
     // Create client without auto-refresh
-    let mut client = Client::from_client_credentials(
+    let client = Client::from_client_credentials(
         key_pair.clone(),
         Some(xero_rs::scope::Scope::common_accounting_read()),
     )

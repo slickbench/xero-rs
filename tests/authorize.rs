@@ -9,6 +9,7 @@ use uuid::Uuid;
 use xero_rs::KeyPair;
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn authorize_client() -> Result<()> {
     test_utils::do_setup();
 

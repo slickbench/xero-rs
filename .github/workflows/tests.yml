@@ -18,13 +18,18 @@ jobs:
     - name: Install Rust stable
       uses: dtolnay/rust-toolchain@stable
       with:
-        components: clippy
+        components: clippy, rustfmt
     - uses: Swatinem/rust-cache@v2
+    - name: Check formatting
+      run: cargo fmt --all -- --check
     - name: Run Clippy
       run: cargo clippy --all-features --all-targets -- -D warnings
 
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
     - uses: actions/checkout@v4
@@ -36,13 +41,10 @@ jobs:
       uses: taiki-e/install-action@cargo-llvm-cov
     - uses: Swatinem/rust-cache@v2
     - name: Run Tests
-      env:
-        XERO_CLIENT_ID: ${{ secrets.XERO_CLIENT_ID }}
-        XERO_CLIENT_SECRET: ${{ secrets.XERO_CLIENT_SECRET }}
-        XERO_TENANT_ID: ${{ secrets.XERO_TENANT_ID }}
       run: cargo llvm-cov --all-features --lcov --output-path lcov.info
     - name: Upload to codecov.io
-      uses: codecov/codecov-action@v4
+      uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
       with:
+        use_oidc: true
         files: lcov.info
         fail_ci_if_error: true

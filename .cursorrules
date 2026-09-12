@@ -1,4 +1,4 @@
-This is a Xero API client for the Rust language. 
+This is a Xero API client for the Rust language.
 Check src/entities/mod.rs and src/lib.rs for a list of existing entities and public APIs.
 See https://developer.xero.com/documentation/api/accounting/overview for official Xero API reference.
 

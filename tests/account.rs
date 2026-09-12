@@ -41,6 +41,7 @@ async fn try_setup_client() -> Option<xero_rs::Client> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn list_accounts() -> Result<()> {
     let client = match try_setup_client().await {
         Some(client) => client,
@@ -64,6 +65,7 @@ async fn list_accounts() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn get_account() -> Result<()> {
     let client = match try_setup_client().await {
         Some(client) => client,
@@ -92,6 +94,7 @@ async fn get_account() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn filter_accounts_by_type() -> Result<()> {
     let client = match try_setup_client().await {
         Some(client) => client,
@@ -129,6 +132,7 @@ async fn filter_accounts_by_type() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn filter_accounts_by_status() -> Result<()> {
     let client = match try_setup_client().await {
         Some(client) => client,
@@ -152,6 +156,7 @@ async fn filter_accounts_by_status() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn create_update_account() -> Result<()> {
     let client = match try_setup_client().await {
         Some(client) => client,
@@ -233,6 +238,7 @@ async fn create_update_account() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn account_attachments() -> Result<()> {
     let client = match try_setup_client().await {
         Some(client) => client,

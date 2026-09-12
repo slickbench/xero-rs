@@ -13,6 +13,7 @@ use miette::Result;
 /// Note: This test requires payroll scopes to be configured in the Xero app.
 /// If the app doesn't have payroll permissions, the test will skip gracefully.
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn list_earnings_rates() -> Result<()> {
     test_utils::do_setup();
     info!("Starting earnings rates list test");

@@ -8,6 +8,7 @@ use std::env;
 use xero_rs::KeyPair;
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn test_method_based_api() -> Result<()> {
     test_utils::do_setup();
 

@@ -11,6 +11,7 @@ use xero_rs::{
 };
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn test_timesheet_crud() -> miette::Result<()> {
     // Set up logging and test environment
     test_utils::do_setup();
@@ -117,10 +118,12 @@ async fn run_test(client: &mut Client) -> miette::Result<()> {
 
     // First, check if a timesheet already exists for this employee and pay period
     info!("Checking for existing timesheets for employee and period");
-    let mut list_params = timesheet::ListParameters::default();
-    list_params.employee_id = Some(employee.employee_id);
-    list_params.start_date = Some(start_date);
-    list_params.end_date = Some(end_date);
+    let list_params = timesheet::ListParameters {
+        employee_id: Some(employee.employee_id),
+        start_date: Some(start_date),
+        end_date: Some(end_date),
+        ..Default::default()
+    };
 
     let existing_timesheets = match client.timesheets().list(Some(list_params), None).await {
         Ok(timesheets) => {
@@ -267,10 +270,12 @@ async fn create_new_timesheet(
     end_date: time::Date,
 ) -> miette::Result<Timesheet> {
     // First, check if a timesheet already exists for this employee and period
-    let mut list_params = timesheet::ListParameters::default();
-    list_params.employee_id = Some(employee.employee_id);
-    list_params.start_date = Some(start_date);
-    list_params.end_date = Some(end_date);
+    let list_params = timesheet::ListParameters {
+        employee_id: Some(employee.employee_id),
+        start_date: Some(start_date),
+        end_date: Some(end_date),
+        ..Default::default()
+    };
 
     // Try to find an existing timesheet first
     match client.timesheets().list(Some(list_params), None).await {
@@ -344,10 +349,12 @@ async fn create_new_timesheet(
                 info!("Timesheet already exists, trying to find it");
 
                 // Create new list parameters
-                let mut new_list_params = timesheet::ListParameters::default();
-                new_list_params.employee_id = Some(employee.employee_id);
-                new_list_params.start_date = Some(start_date);
-                new_list_params.end_date = Some(end_date);
+                let new_list_params = timesheet::ListParameters {
+                    employee_id: Some(employee.employee_id),
+                    start_date: Some(start_date),
+                    end_date: Some(end_date),
+                    ..Default::default()
+                };
 
                 match client.timesheets().list(Some(new_list_params), None).await {
                     Ok(timesheets) => {

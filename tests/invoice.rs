@@ -31,7 +31,7 @@ async fn try_setup_client() -> Option<xero_rs::Client> {
     };
 
     // Create client with credentials and full scopes
-    let mut client = xero_rs::Client::from_client_credentials(
+    let client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id, Some(client_secret)),
         xero_rs::Scope::all_accounting(),
     )
@@ -39,15 +39,16 @@ async fn try_setup_client() -> Option<xero_rs::Client> {
     .ok()?;
 
     // Set the tenant ID and return the configured client
-    client.set_tenant(Some(tenant_id));
+    client.set_tenant(Some(tenant_id)).await;
 
     Some(client)
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn list_invoices() -> Result<()> {
     // Try to set up the client
-    let mut client = match try_setup_client().await {
+    let client = match try_setup_client().await {
         Some(client) => client,
         None => {
             info!("Skipping test: Required environment variables not set");
@@ -68,9 +69,10 @@ async fn list_invoices() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn get_invoice() -> Result<()> {
     // Try to set up the client
-    let mut client = match try_setup_client().await {
+    let client = match try_setup_client().await {
         Some(client) => client,
         None => {
             info!("Skipping test: Required environment variables not set");
@@ -97,9 +99,10 @@ async fn get_invoice() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn create_update_invoice() -> Result<()> {
     // Try to set up the client
-    let mut client = match try_setup_client().await {
+    let client = match try_setup_client().await {
         Some(client) => client,
         None => {
             info!("Skipping test: Required environment variables not set");
@@ -201,9 +204,10 @@ async fn create_update_invoice() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn invoice_history() -> Result<()> {
     // Try to set up the client
-    let mut client = match try_setup_client().await {
+    let client = match try_setup_client().await {
         Some(client) => client,
         None => {
             info!("Skipping test: Required environment variables not set");
@@ -241,9 +245,10 @@ async fn invoice_history() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn invoice_pdf() -> Result<()> {
     // Try to set up the client
-    let mut client = match try_setup_client().await {
+    let client = match try_setup_client().await {
         Some(client) => client,
         None => {
             info!("Skipping test: Required environment variables not set");
@@ -281,9 +286,10 @@ async fn invoice_pdf() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn invoice_attachments() -> Result<()> {
     // Try to set up the client
-    let mut client = match try_setup_client().await {
+    let client = match try_setup_client().await {
         Some(client) => client,
         None => {
             info!("Skipping test: Required environment variables not set");
@@ -371,9 +377,10 @@ async fn invoice_attachments() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn invoice_online_url() -> Result<()> {
     // Try to set up the client
-    let mut client = match try_setup_client().await {
+    let client = match try_setup_client().await {
         Some(client) => client,
         None => {
             info!("Skipping test: Required environment variables not set");
@@ -401,9 +408,10 @@ async fn invoice_online_url() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn invoice_email() -> Result<()> {
     // Try to set up the client
-    let mut client = match try_setup_client().await {
+    let client = match try_setup_client().await {
         Some(client) => client,
         None => {
             info!("Skipping test: Required environment variables not set");

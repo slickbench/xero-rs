@@ -217,9 +217,11 @@ mod tests {
     fn builder_default_omits_contact_for_partial_updates() {
         // This tests that Builder::default() can be used for partial updates
         // without accidentally including a contact field
-        let mut builder = Builder::default();
-        builder.reference = Some("Updated reference".to_string());
-        builder.purchase_order_id = Some(Uuid::nil());
+        let builder = Builder {
+            reference: Some("Updated reference".to_string()),
+            purchase_order_id: Some(Uuid::nil()),
+            ..Builder::default()
+        };
 
         let request = PurchaseOrdersRequest::single(&builder);
         let json = serde_json::to_value(&request).expect("serialization should succeed");

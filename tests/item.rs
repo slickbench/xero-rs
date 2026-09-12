@@ -18,6 +18,7 @@ fn unique_timestamp() -> u64 {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 #[serial]
 async fn list_items() -> Result<()> {
     test_utils::do_setup();
@@ -30,14 +31,14 @@ async fn list_items() -> Result<()> {
             .expect("Invalid XERO_TENANT_ID format");
 
     // Create client with credentials and scopes
-    let mut client = xero_rs::Client::from_client_credentials(
+    let client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id.clone(), Some(client_secret.clone())),
         xero_rs::Scope::accounting_settings_read(),
     )
     .await?;
 
     // Set the tenant ID
-    client.set_tenant(Some(tenant_id));
+    client.set_tenant(Some(tenant_id)).await;
 
     // List all items
     let items = client.items().list_all().await?;
@@ -51,6 +52,7 @@ async fn list_items() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 #[serial]
 async fn list_items_with_filters() -> Result<()> {
     test_utils::do_setup();
@@ -63,14 +65,14 @@ async fn list_items_with_filters() -> Result<()> {
             .expect("Invalid XERO_TENANT_ID format");
 
     // Create client with credentials and scopes
-    let mut client = xero_rs::Client::from_client_credentials(
+    let client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id.clone(), Some(client_secret.clone())),
         xero_rs::Scope::accounting_settings_read(),
     )
     .await?;
 
     // Set the tenant ID
-    client.set_tenant(Some(tenant_id));
+    client.set_tenant(Some(tenant_id)).await;
 
     // List items with filters
     let params = item::ListParameters::builder()
@@ -85,6 +87,7 @@ async fn list_items_with_filters() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 #[serial]
 async fn get_item() -> Result<()> {
     test_utils::do_setup();
@@ -97,14 +100,14 @@ async fn get_item() -> Result<()> {
             .expect("Invalid XERO_TENANT_ID format");
 
     // Create client with credentials and scopes
-    let mut client = xero_rs::Client::from_client_credentials(
+    let client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id.clone(), Some(client_secret.clone())),
         xero_rs::Scope::accounting_settings_read(),
     )
     .await?;
 
     // Set the tenant ID
-    client.set_tenant(Some(tenant_id));
+    client.set_tenant(Some(tenant_id)).await;
 
     // First, list items to get an ID
     let items = client.items().list_all().await?;
@@ -122,12 +125,12 @@ async fn get_item() -> Result<()> {
 
         // Create a temporary item to test the get operation
         // Need write permissions for this
-        let mut write_client = xero_rs::Client::from_client_credentials(
+        let write_client = xero_rs::Client::from_client_credentials(
             KeyPair::new(client_id, Some(client_secret)),
             xero_rs::Scope::accounting_settings(),
         )
         .await?;
-        write_client.set_tenant(Some(tenant_id));
+        write_client.set_tenant(Some(tenant_id)).await;
 
         let unique_code = format!("GET_TEST_{}", unique_timestamp());
         let test_item = item::Builder::new(&unique_code, "Get Test Item")
@@ -152,6 +155,7 @@ async fn get_item() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 #[serial]
 async fn get_item_by_code() -> Result<()> {
     test_utils::do_setup();
@@ -164,14 +168,14 @@ async fn get_item_by_code() -> Result<()> {
             .expect("Invalid XERO_TENANT_ID format");
 
     // Create client with credentials and scopes
-    let mut client = xero_rs::Client::from_client_credentials(
+    let client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id.clone(), Some(client_secret.clone())),
         xero_rs::Scope::accounting_settings_read(),
     )
     .await?;
 
     // Set the tenant ID
-    client.set_tenant(Some(tenant_id));
+    client.set_tenant(Some(tenant_id)).await;
 
     // First, list items to get a code
     let items = client.items().list_all().await?;
@@ -189,12 +193,12 @@ async fn get_item_by_code() -> Result<()> {
 
         // Create a temporary item to test the get_by_code operation
         // Need write permissions for this
-        let mut write_client = xero_rs::Client::from_client_credentials(
+        let write_client = xero_rs::Client::from_client_credentials(
             KeyPair::new(client_id, Some(client_secret)),
             xero_rs::Scope::accounting_settings(),
         )
         .await?;
-        write_client.set_tenant(Some(tenant_id));
+        write_client.set_tenant(Some(tenant_id)).await;
 
         let unique_code = format!("GETCODE_TEST_{}", unique_timestamp());
         let test_item = item::Builder::new(&unique_code, "Get by Code Test Item")
@@ -219,6 +223,7 @@ async fn get_item_by_code() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 #[serial]
 async fn create_update_delete_item() -> Result<()> {
     test_utils::do_setup();
@@ -231,14 +236,14 @@ async fn create_update_delete_item() -> Result<()> {
             .expect("Invalid XERO_TENANT_ID format");
 
     // Create client with credentials and scopes
-    let mut client = xero_rs::Client::from_client_credentials(
+    let client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id.clone(), Some(client_secret.clone())),
         xero_rs::Scope::accounting_settings(),
     )
     .await?;
 
     // Set the tenant ID
-    client.set_tenant(Some(tenant_id));
+    client.set_tenant(Some(tenant_id)).await;
 
     // Create a unique item code using timestamp
     let unique_code = format!("TEST_{}", unique_timestamp());
@@ -283,6 +288,7 @@ async fn create_update_delete_item() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 #[serial]
 async fn create_item_with_details() -> Result<()> {
     test_utils::do_setup();
@@ -295,14 +301,14 @@ async fn create_item_with_details() -> Result<()> {
             .expect("Invalid XERO_TENANT_ID format");
 
     // Create client with credentials and scopes
-    let mut client = xero_rs::Client::from_client_credentials(
+    let client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id.clone(), Some(client_secret.clone())),
         xero_rs::Scope::accounting_settings(),
     )
     .await?;
 
     // Set the tenant ID
-    client.set_tenant(Some(tenant_id));
+    client.set_tenant(Some(tenant_id)).await;
 
     // Create a unique item code using timestamp
     let unique_code = format!("DETAIL_{}", unique_timestamp());
@@ -330,6 +336,7 @@ async fn create_item_with_details() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 #[serial]
 async fn create_multiple_items() -> Result<()> {
     test_utils::do_setup();
@@ -342,14 +349,14 @@ async fn create_multiple_items() -> Result<()> {
             .expect("Invalid XERO_TENANT_ID format");
 
     // Create client with credentials and scopes
-    let mut client = xero_rs::Client::from_client_credentials(
+    let client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id.clone(), Some(client_secret.clone())),
         xero_rs::Scope::accounting_settings(),
     )
     .await?;
 
     // Set the tenant ID
-    client.set_tenant(Some(tenant_id));
+    client.set_tenant(Some(tenant_id)).await;
 
     let timestamp = unique_timestamp();
 
@@ -377,6 +384,7 @@ async fn create_multiple_items() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 #[serial]
 async fn update_or_create_item() -> Result<()> {
     test_utils::do_setup();
@@ -389,14 +397,14 @@ async fn update_or_create_item() -> Result<()> {
             .expect("Invalid XERO_TENANT_ID format");
 
     // Create client with credentials and scopes
-    let mut client = xero_rs::Client::from_client_credentials(
+    let client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id.clone(), Some(client_secret.clone())),
         xero_rs::Scope::accounting_settings(),
     )
     .await?;
 
     // Set the tenant ID
-    client.set_tenant(Some(tenant_id));
+    client.set_tenant(Some(tenant_id)).await;
 
     let unique_code = format!("UPSERT_{}", unique_timestamp());
 
@@ -429,6 +437,7 @@ async fn update_or_create_item() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 #[serial]
 async fn item_history() -> Result<()> {
     test_utils::do_setup();
@@ -441,14 +450,14 @@ async fn item_history() -> Result<()> {
             .expect("Invalid XERO_TENANT_ID format");
 
     // Create client with credentials and scopes
-    let mut client = xero_rs::Client::from_client_credentials(
+    let client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id.clone(), Some(client_secret.clone())),
         xero_rs::Scope::accounting_settings(),
     )
     .await?;
 
     // Set the tenant ID
-    client.set_tenant(Some(tenant_id));
+    client.set_tenant(Some(tenant_id)).await;
 
     // Create an item first
     let unique_code = format!("HIST_{}", unique_timestamp());
@@ -481,6 +490,7 @@ async fn item_history() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 #[serial]
 async fn tracked_inventory_item() -> Result<()> {
     test_utils::do_setup();
@@ -493,14 +503,14 @@ async fn tracked_inventory_item() -> Result<()> {
             .expect("Invalid XERO_TENANT_ID format");
 
     // Create client with credentials and scopes
-    let mut client = xero_rs::Client::from_client_credentials(
+    let client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id.clone(), Some(client_secret.clone())),
         xero_rs::Scope::accounting_settings(),
     )
     .await?;
 
     // Set the tenant ID
-    client.set_tenant(Some(tenant_id));
+    client.set_tenant(Some(tenant_id)).await;
 
     let unique_code = format!("INV_{}", unique_timestamp());
 
@@ -543,6 +553,7 @@ async fn tracked_inventory_item() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 #[serial]
 async fn error_handling() -> Result<()> {
     test_utils::do_setup();
@@ -555,14 +566,14 @@ async fn error_handling() -> Result<()> {
             .expect("Invalid XERO_TENANT_ID format");
 
     // Create client with credentials and scopes
-    let mut client = xero_rs::Client::from_client_credentials(
+    let client = xero_rs::Client::from_client_credentials(
         KeyPair::new(client_id.clone(), Some(client_secret.clone())),
         xero_rs::Scope::accounting_settings_read(),
     )
     .await?;
 
     // Set the tenant ID
-    client.set_tenant(Some(tenant_id));
+    client.set_tenant(Some(tenant_id)).await;
 
     // Try to get a non-existent item
     let fake_id = Uuid::new_v4();

@@ -9,6 +9,7 @@ mod test_utils;
 use xero_rs::payroll::leave_application::{LeavePeriodStatus, ListParameters};
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn test_list_leave_applications() -> miette::Result<()> {
     test_utils::do_setup();
     info!("Starting leave applications list test");
@@ -56,6 +57,7 @@ async fn test_list_leave_applications() -> miette::Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn test_list_leave_applications_v2() -> miette::Result<()> {
     test_utils::do_setup();
     info!("Starting leave applications v2 list test (all statuses)");
@@ -114,6 +116,7 @@ async fn test_list_leave_applications_v2() -> miette::Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn test_list_leave_types() -> miette::Result<()> {
     test_utils::do_setup();
     info!("Starting leave types list test");
@@ -147,6 +150,7 @@ async fn test_list_leave_types() -> miette::Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn test_get_leave_application() -> miette::Result<()> {
     test_utils::do_setup();
     info!("Starting get leave application by ID test");
@@ -204,6 +208,7 @@ async fn test_get_leave_application() -> miette::Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn test_list_leave_with_employee_filter() -> miette::Result<()> {
     test_utils::do_setup();
     info!("Starting leave applications list with employee filter test");

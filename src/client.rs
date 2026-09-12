@@ -125,7 +125,7 @@ struct TokenState {
 }
 
 impl TokenState {
-    /// Calculate expiry time from token response's expires_in duration
+    /// Calculate expiry time from token response's `expires_in` duration
     fn calculate_expiry(expires_in: Option<std::time::Duration>) -> Option<std::time::Instant> {
         expires_in.map(|duration| std::time::Instant::now() + duration)
     }
@@ -133,8 +133,7 @@ impl TokenState {
     /// Check if the token is expired or will expire within the given margin
     fn is_expired_or_expiring(&self, margin: std::time::Duration) -> bool {
         self.expires_at
-            .map(|expires_at| std::time::Instant::now() + margin >= expires_at)
-            .unwrap_or(false)
+            .is_some_and(|expires_at| std::time::Instant::now() + margin >= expires_at)
     }
 }
 
@@ -198,9 +197,9 @@ impl RateLimiter {
 
             // Jitter so waiters released by the same expiry do not all retry on
             // the same tick and immediately refill the window.
-            let jitter = Duration::from_millis((jitter_fraction() * 250.0) as u64);
+            let jitter = Duration::from_secs_f64(jitter_fraction() * 0.250);
             tracing::debug!(
-                wait_ms = (wait + jitter).as_millis() as u64,
+                wait_ms = %(wait + jitter).as_millis(),
                 "Xero rate limit window full, pacing request"
             );
             sleep(wait + jitter).await;
@@ -730,12 +729,12 @@ impl Client {
             let base_wait = retry_after.unwrap_or(Duration::from_secs(60));
             // Without jitter, every task rate limited in the same window wakes on
             // the same tick and re-exhausts the limit together.
-            let wait_time = base_wait + Duration::from_millis((jitter_fraction() * 1_000.0) as u64);
+            let wait_time = base_wait + Duration::from_secs_f64(jitter_fraction());
 
             tracing::warn!(
                 attempt = *attempts,
                 max_attempts = MAX_RETRY_ATTEMPTS,
-                wait_ms = wait_time.as_millis() as u64,
+                wait_ms = %wait_time.as_millis(),
                 "Rate limit exceeded, waiting before retry"
             );
 
@@ -783,6 +782,7 @@ impl Client {
             if let Some(modified_since) = if_modified_since {
                 // Format as ISO 8601 UTC which Xero expects: yyyy-mm-ddThh:mm:ss
                 let formatted = modified_since
+                    .to_offset(time::UtcOffset::UTC)
                     .format(&time::format_description::well_known::Iso8601::DEFAULT)
                     .unwrap_or_else(|_| modified_since.to_string());
                 if let Ok(header_value) = header::HeaderValue::from_str(&formatted) {
@@ -939,8 +939,10 @@ impl Client {
                             .headers()
                             .get(HEADER_RATE_LIMIT_PROBLEM)
                             .and_then(|v| v.to_str().ok())
-                            .map(error::RateLimitType::from_header)
-                            .unwrap_or(error::RateLimitType::Unknown("not specified".to_string()));
+                            .map_or(
+                                error::RateLimitType::Unknown("not specified".to_string()),
+                                error::RateLimitType::from_header,
+                            );
 
                         let text = response.text().await.unwrap_or_default();
                         let url_str = url.to_string();
@@ -1007,6 +1009,10 @@ impl Client {
             request_id = %Uuid::new_v4(),
         )
     )]
+    #[allow(
+        clippy::extra_unused_lifetimes,
+        reason = "retain published generic parameters for source compatibility"
+    )]
     pub async fn get<
         'a,
         R: DeserializeOwned,
@@ -1033,6 +1039,24 @@ impl Client {
         self.execute_get(resolved_url, query).await
     }
 
+    /// GET an absolute or relative URL through the shared retry and rate-limit path,
+    /// optionally supplying Xero's modification timestamp header.
+    pub async fn get_with_modified_since<R, Q>(
+        &self,
+        url: &str,
+        query: &Q,
+        modified_since: Option<time::OffsetDateTime>,
+    ) -> Result<R>
+    where
+        R: DeserializeOwned,
+        Q: Serialize,
+    {
+        let base = Url::parse(BASE_URL).map_err(|_| Error::InvalidEndpoint)?;
+        let url = base.join(url).map_err(|_| Error::InvalidEndpoint)?;
+        self.execute_get_with_modified_since(url, query, modified_since)
+            .await
+    }
+
     /// Perform a `GET` request against the API using a typed `XeroEndpoint` with automatic retry.
     #[instrument(
         skip(self, query),
@@ -1041,6 +1065,10 @@ impl Client {
             tags.xero_endpoint = %endpoint,
             request_id = %Uuid::new_v4(),
         )
+    )]
+    #[allow(
+        clippy::extra_unused_lifetimes,
+        reason = "retain published generic parameters for source compatibility"
     )]
     pub async fn get_endpoint<'a, R: DeserializeOwned, T: Serialize + Sized + fmt::Debug>(
         &self,
@@ -1091,6 +1119,10 @@ impl Client {
             request_id = %Uuid::new_v4(),
         )
     )]
+    #[allow(
+        clippy::extra_unused_lifetimes,
+        reason = "retain published generic parameters for source compatibility"
+    )]
     pub async fn get_endpoint_with_modified_since<
         'a,
         R: DeserializeOwned,
@@ -1120,6 +1152,10 @@ impl Client {
             request_id = %Uuid::new_v4(),
         )
     )]
+    #[allow(
+        clippy::extra_unused_lifetimes,
+        reason = "retain published generic parameters for source compatibility"
+    )]
     pub async fn put<
         'a,
         R: DeserializeOwned,
@@ -1130,7 +1166,7 @@ impl Client {
         url: U,
         data: &T,
     ) -> Result<R> {
-        trace!(json = ?serde_json::to_string(data).unwrap(), "making PUT request");
+        trace!(json = ?serde_json::to_string(data), "making PUT request");
 
         // Handle relative URLs by prepending the base URL if needed
         let url_str = url.as_ref();
@@ -1155,6 +1191,10 @@ impl Client {
             request_id = %Uuid::new_v4(),
         )
     )]
+    #[allow(
+        clippy::extra_unused_lifetimes,
+        reason = "retain published generic parameters for source compatibility"
+    )]
     pub async fn post<
         'a,
         R: DeserializeOwned,
@@ -1165,7 +1205,7 @@ impl Client {
         url: U,
         data: &T,
     ) -> Result<R> {
-        trace!(json = ?serde_json::to_string(data).unwrap(), "making POST request");
+        trace!(json = ?serde_json::to_string(data), "making POST request");
 
         // Handle relative URLs by prepending the base URL if needed
         let url_str = url.as_ref();
@@ -1190,12 +1230,16 @@ impl Client {
             request_id = %Uuid::new_v4(),
         )
     )]
+    #[allow(
+        clippy::extra_unused_lifetimes,
+        reason = "retain published generic parameters for source compatibility"
+    )]
     pub async fn post_endpoint<'a, R: DeserializeOwned, T: Serialize + Sized + fmt::Debug>(
         &self,
         endpoint: XeroEndpoint,
         data: &T,
     ) -> Result<R> {
-        trace!(json = ?serde_json::to_string(data).unwrap(), "making POST request with endpoint");
+        trace!(json = ?serde_json::to_string(data), "making POST request with endpoint");
         let url = endpoint.to_url()?;
         self.execute_post(url, data).await
     }
@@ -1210,7 +1254,6 @@ impl Client {
         )
     )]
     pub(crate) async fn post_endpoint_with_options<
-        'a,
         R: DeserializeOwned,
         T: Serialize + Sized + fmt::Debug,
     >(
@@ -1219,7 +1262,7 @@ impl Client {
         data: &T,
         options: &crate::MutationOptions,
     ) -> Result<R> {
-        trace!(json = ?serde_json::to_string(data).unwrap(), ?options, "making POST request with endpoint and options");
+        trace!(json = ?serde_json::to_string(data), ?options, "making POST request with endpoint and options");
         let mut url = endpoint.to_url()?;
         options.apply_to_url(&mut url);
         self.execute_post(url, data).await
@@ -1234,12 +1277,16 @@ impl Client {
             request_id = %Uuid::new_v4(),
         )
     )]
+    #[allow(
+        clippy::extra_unused_lifetimes,
+        reason = "retain published generic parameters for source compatibility"
+    )]
     pub async fn put_endpoint<'a, R: DeserializeOwned, T: Serialize + Sized>(
         &self,
         endpoint: XeroEndpoint,
         data: &T,
     ) -> Result<R> {
-        trace!(json = ?serde_json::to_string(data).unwrap(), "making PUT request with endpoint");
+        trace!(json = ?serde_json::to_string(data), "making PUT request with endpoint");
         let url = endpoint.to_url()?;
         self.execute_put(url, data).await
     }
@@ -1253,13 +1300,13 @@ impl Client {
             request_id = %Uuid::new_v4(),
         )
     )]
-    pub(crate) async fn put_endpoint_with_options<'a, R: DeserializeOwned, T: Serialize + Sized>(
+    pub(crate) async fn put_endpoint_with_options<R: DeserializeOwned, T: Serialize + Sized>(
         &self,
         endpoint: XeroEndpoint,
         data: &T,
         options: &crate::MutationOptions,
     ) -> Result<R> {
-        trace!(json = ?serde_json::to_string(data).unwrap(), ?options, "making PUT request with endpoint and options");
+        trace!(json = ?serde_json::to_string(data), ?options, "making PUT request with endpoint and options");
         let mut url = endpoint.to_url()?;
         options.apply_to_url(&mut url);
         self.execute_put(url, data).await
@@ -1307,6 +1354,8 @@ impl Client {
     }
 
     #[instrument(skip(response))]
+    // Keep status-specific diagnostic construction together for auditing.
+    #[allow(clippy::too_many_lines)]
     async fn handle_response<T: DeserializeOwned + Sized>(
         response: reqwest::Response,
         method: &str,
@@ -1347,8 +1396,10 @@ impl Client {
                 .headers()
                 .get(HEADER_RATE_LIMIT_PROBLEM)
                 .and_then(|v| v.to_str().ok())
-                .map(error::RateLimitType::from_header)
-                .unwrap_or(error::RateLimitType::Unknown("not specified".to_string()));
+                .map_or(
+                    error::RateLimitType::Unknown("not specified".to_string()),
+                    error::RateLimitType::from_header,
+                );
 
             let retry_after = response
                 .headers()
@@ -1499,46 +1550,45 @@ impl Client {
                     }
                 }
                 status if status.is_server_error() => {
-                    match serde_json::from_str::<error::Response>(&text) {
-                        Ok(api_error) => Err(Error::API {
+                    if let Ok(api_error) = serde_json::from_str::<error::Response>(&text) {
+                        Err(Error::API {
                             response: api_error,
                             span_trace: SpanTrace::capture(),
-                        }),
-                        Err(_) => {
-                            // 5xx without a standard Type field — extract a message
-                            // from common JSON fields, or fall back to the status text
-                            let message = serde_json::from_str::<serde_json::Value>(&text)
-                                .ok()
-                                .and_then(|v| {
-                                    v.get("Message")
-                                        .or_else(|| v.get("message"))
-                                        .or_else(|| v.get("Detail"))
-                                        .or_else(|| v.get("detail"))
-                                        .and_then(|m| m.as_str().map(String::from))
-                                })
-                                .unwrap_or_else(|| {
-                                    status
-                                        .canonical_reason()
-                                        .unwrap_or("Unknown server error")
-                                        .to_string()
-                                });
-
-                            tracing::error!(
-                                url = %url,
-                                status = %status,
-                                message = %message,
-                                response_body = %text,
-                                "Xero server error (5xx) with non-standard response body"
-                            );
-
-                            Err(Error::ServerError {
-                                status_code: status,
-                                message,
-                                response_body: Some(text),
-                                url,
-                                span_trace: SpanTrace::capture(),
+                        })
+                    } else {
+                        // 5xx without a standard Type field — extract a message
+                        // from common JSON fields, or fall back to the status text
+                        let message = serde_json::from_str::<serde_json::Value>(&text)
+                            .ok()
+                            .and_then(|v| {
+                                v.get("Message")
+                                    .or_else(|| v.get("message"))
+                                    .or_else(|| v.get("Detail"))
+                                    .or_else(|| v.get("detail"))
+                                    .and_then(|m| m.as_str().map(String::from))
                             })
-                        }
+                            .unwrap_or_else(|| {
+                                status
+                                    .canonical_reason()
+                                    .unwrap_or("Unknown server error")
+                                    .to_string()
+                            });
+
+                        tracing::error!(
+                            url = %url,
+                            status = %status,
+                            message = %message,
+                            response_body = %text,
+                            "Xero server error (5xx) with non-standard response body"
+                        );
+
+                        Err(Error::ServerError {
+                            status_code: status,
+                            message,
+                            response_body: Some(text),
+                            url,
+                            span_trace: SpanTrace::capture(),
+                        })
                     }
                 }
                 _ => match serde_json::from_str::<error::Response>(&text) {
@@ -2211,17 +2261,17 @@ impl PayCalendarsApi<'_> {
             format!("https://api.xero.com/payroll.xro/1.0/PayrollCalendars/{pay_calendar_id}");
         let response: pay_calendar::PayCalendarResponse = self.client.get(&url, &()).await?;
 
-        if response.payroll_calendars.is_empty() {
-            return Err(Error::NotFound {
+        if let Some(value) = response.payroll_calendars.first() {
+            Ok(value.clone())
+        } else {
+            Err(Error::NotFound {
                 entity: "PayCalendar".to_string(),
                 url,
                 status_code: StatusCode::NOT_FOUND,
                 response_body: Some(format!("Pay Calendar with ID {pay_calendar_id} not found")),
                 span_trace: SpanTrace::capture(),
-            });
+            })
         }
-
-        Ok(response.payroll_calendars.into_iter().next().unwrap())
     }
 
     /// Create a new pay calendar
@@ -2247,17 +2297,17 @@ impl PayCalendarsApi<'_> {
 
         let response: pay_calendar::PayCalendarResponse = self.client.post(url, &request).await?;
 
-        if response.payroll_calendars.is_empty() {
-            return Err(Error::NotFound {
+        if let Some(value) = response.payroll_calendars.first() {
+            Ok(value.clone())
+        } else {
+            Err(Error::NotFound {
                 entity: "PayCalendar".to_string(),
                 url: url.to_string(),
                 status_code: StatusCode::OK,
                 response_body: Some("No pay calendar was returned after creation".to_string()),
                 span_trace: SpanTrace::capture(),
-            });
+            })
         }
-
-        Ok(response.payroll_calendars.into_iter().next().unwrap())
     }
 }
 
@@ -2426,7 +2476,7 @@ impl ItemsApi<'_> {
     /// Update or create a single item
     #[instrument(skip(self, item))]
     pub async fn update_or_create(&self, item: &item::Builder) -> Result<Item> {
-        let items = item::update_or_create(self.client, &[item.clone()]).await?;
+        let items = item::update_or_create(self.client, std::slice::from_ref(item)).await?;
         items.into_iter().next().ok_or(Error::NotFound {
             entity: "Item".to_string(),
             url: item::ENDPOINT.to_string(),
@@ -2499,7 +2549,7 @@ impl LeaveApplicationsApi<'_> {
         LeaveApplication::list(self.client, parameters.as_ref(), modified_after).await
     }
 
-    /// List all leave applications (v2 endpoint)
+    /// List a page of leave applications with all statuses (v2 endpoint)
     ///
     /// This endpoint returns leave with all statuses: SCHEDULED, PROCESSED,
     /// REQUESTED (awaiting approval), and REJECTED.
@@ -2517,7 +2567,14 @@ impl LeaveApplicationsApi<'_> {
         LeaveApplication::list_v2(self.client, parameters.as_ref(), modified_after).await
     }
 
-    /// List all approved leave without filtering
+    /// Retrieve every page of V2 leave, including requested and rejected applications.
+    /// Fails rather than returning an incomplete snapshot if pagination repeats IDs.
+    pub async fn list_all_v2(&self) -> Result<Vec<LeaveApplication>> {
+        LeaveApplication::list_all_v2(self.client).await
+    }
+
+    /// List the first page of approved leave without filtering.
+    /// Use `list_all_v2` for a complete snapshot including all statuses.
     #[instrument(skip(self))]
     pub async fn list_all(&self) -> Result<Vec<LeaveApplication>> {
         self.list(None, None).await
@@ -2566,7 +2623,7 @@ pub struct LeaveTypesApi<'a> {
 impl LeaveTypesApi<'_> {
     /// Retrieve a list of leave types
     ///
-    /// Leave types are retrieved from the PayItems endpoint.
+    /// Leave types are retrieved from the `PayItems` endpoint.
     #[instrument(skip(self))]
     pub async fn list(&self) -> Result<Vec<LeaveType>> {
         #[derive(Deserialize)]
@@ -2588,6 +2645,23 @@ impl LeaveTypesApi<'_> {
             .get(earnings_rates::ENDPOINT, &empty_vec)
             .await?;
         Ok(response.pay_items.leave_types)
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn leave_test_client() -> Client {
+    Client {
+        token_state: Arc::new(RwLock::new(TokenState {
+            access_token: AccessToken::new("test-token".into()),
+            refresh_token: None,
+            expires_at: None,
+            rate_limit_info: RateLimitInfo::default(),
+        })),
+        tenant_id: Arc::new(RwLock::new(Some(Uuid::nil()))),
+        refresh_credentials: None,
+        concurrency_limiter: None,
+        rate_limiter: None,
+        default_unitdp: None,
     }
 }
 

@@ -197,11 +197,14 @@ impl Invoice {
 #[serde(rename_all = "PascalCase")]
 pub(crate) struct ListResponse {
     pub invoices: Vec<Invoice>,
-    pub status: String,
-    pub id: Uuid,
-    pub provider_name: String,
+    #[serde(rename = "Status")]
+    pub _status: String,
+    #[serde(rename = "Id")]
+    pub _id: Uuid,
+    #[serde(rename = "ProviderName")]
+    pub _provider_name: String,
     #[serde(rename = "DateTimeUTC")]
-    pub date_time_utc: Option<String>,
+    pub _date_time_utc: Option<String>,
 }
 
 impl From<ListResponse> for Vec<Invoice> {
@@ -376,8 +379,8 @@ impl ListParameters {
     #[must_use]
     pub fn with_ids(mut self, ids: Vec<Uuid>) -> Self {
         let ids_str = ids
-            .iter()
-            .map(Uuid::to_string)
+            .into_iter()
+            .map(|id| id.to_string())
             .collect::<Vec<_>>()
             .join(",");
         self.ids = Some(ids_str);

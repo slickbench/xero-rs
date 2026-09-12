@@ -10,6 +10,7 @@ use xero_rs::{
 };
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn test_pay_calendar_api() -> miette::Result<()> {
     test_utils::do_setup();
     info!("Starting pay calendar API test");
