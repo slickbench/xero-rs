@@ -46,6 +46,7 @@ async fn try_setup_client() -> Option<xero_rs::Client> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn test_line_item_with_discount_amount() -> Result<()> {
     // Try to set up the client
     let client = match try_setup_client().await {

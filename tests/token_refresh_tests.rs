@@ -5,6 +5,7 @@ mod test_utils;
 
 /// Test that automatic token refresh works when enabled
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn test_automatic_token_refresh_succeeds() -> Result<()> {
     test_utils::do_setup();
 
@@ -67,6 +68,7 @@ async fn test_automatic_token_refresh_succeeds() -> Result<()> {
 
 /// Test that requests fail when auto-refresh is disabled
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn test_without_auto_refresh_fails() -> Result<()> {
     test_utils::do_setup();
 
@@ -143,6 +145,7 @@ async fn test_without_auto_refresh_fails() -> Result<()> {
 
 /// Test that manual refresh still works even when auto-refresh is disabled
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn test_manual_refresh_still_works() -> Result<()> {
     test_utils::do_setup();
 
@@ -200,6 +203,7 @@ async fn test_manual_refresh_still_works() -> Result<()> {
 
 /// Test that is_token_expiring returns false for a fresh token
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn test_is_token_expiring_fresh_token() -> Result<()> {
     test_utils::do_setup();
 
@@ -224,6 +228,7 @@ async fn test_is_token_expiring_fresh_token() -> Result<()> {
 
 /// Test that ensure_valid_token succeeds with a fresh token (no refresh needed)
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn test_ensure_valid_token_fresh() -> Result<()> {
     test_utils::do_setup();
 

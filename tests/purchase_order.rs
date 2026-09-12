@@ -16,6 +16,7 @@ use xero_rs::{
 };
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn get_purchase_orders() -> Result<()> {
     test_utils::do_setup();
 
@@ -59,6 +60,7 @@ async fn get_purchase_orders() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn create_purchase_order() -> Result<()> {
     test_utils::do_setup();
 
@@ -108,6 +110,7 @@ async fn create_purchase_order() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn update_purchase_order() -> Result<()> {
     test_utils::do_setup();
 

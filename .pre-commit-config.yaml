@@ -8,6 +8,8 @@ repos:
     rev: v4.0.1
     hooks:
     -   id: trailing-whitespace
+        # Preserve the vendored upstream specifications verbatim.
+        exclude: ^Xero-OpenAPI/
     -   id: check-merge-conflict
 -   repo: https://github.com/doublify/pre-commit-rust
     rev: v1.0

@@ -45,6 +45,7 @@ async fn try_setup_client() -> Option<xero_rs::Client> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn list_quotes() -> Result<()> {
     // Try to set up the client
     let client = match try_setup_client().await {
@@ -68,6 +69,7 @@ async fn list_quotes() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn get_quote() -> Result<()> {
     // Try to set up the client
     let client = match try_setup_client().await {
@@ -94,6 +96,7 @@ async fn get_quote() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn create_update_quote() -> Result<()> {
     // Try to set up the client
     let client = match try_setup_client().await {
@@ -190,6 +193,7 @@ async fn create_update_quote() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn quote_history() -> Result<()> {
     // Try to set up the client
     let client = match try_setup_client().await {
@@ -230,6 +234,7 @@ async fn quote_history() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn quote_pdf() -> Result<()> {
     // Try to set up the client
     let client = match try_setup_client().await {
@@ -270,6 +275,7 @@ async fn quote_pdf() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn quote_attachments() -> Result<()> {
     // Try to set up the client
     let client = match try_setup_client().await {
@@ -360,6 +366,7 @@ async fn quote_attachments() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn create_quote_with_line_items() -> Result<()> {
     let client = match try_setup_client().await {
         Some(client) => client,
@@ -457,6 +464,7 @@ async fn create_quote_with_line_items() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn update_quote_line_items() -> Result<()> {
     let client = match try_setup_client().await {
         Some(client) => client,
@@ -597,6 +605,7 @@ async fn update_quote_line_items() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn quote_status_transitions() -> Result<()> {
     let client = match try_setup_client().await {
         Some(client) => client,
@@ -702,6 +711,7 @@ async fn quote_status_transitions() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn list_quotes_with_filters() -> Result<()> {
     let client = match try_setup_client().await {
         Some(client) => client,
@@ -767,6 +777,7 @@ async fn list_quotes_with_filters() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn update_quote_number_prefix() -> Result<()> {
     let client = match try_setup_client().await {
         Some(client) => client,

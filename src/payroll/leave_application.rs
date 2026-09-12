@@ -44,8 +44,10 @@ pub const ENDPOINT_V2: &str = "https://api.xero.com/payroll.xro/1.0/LeaveApplica
 /// Status of a leave period within a leave application
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+#[derive(Default)]
 pub enum LeavePeriodStatus {
     /// Leave is scheduled (default status)
+    #[default]
     Scheduled,
     /// Leave has been processed in a pay run
     Processed,
@@ -55,27 +57,16 @@ pub enum LeavePeriodStatus {
     Rejected,
 }
 
-impl Default for LeavePeriodStatus {
-    fn default() -> Self {
-        Self::Scheduled
-    }
-}
-
 /// How the leave will be paid out
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Default)]
 pub enum PayOutType {
     /// Standard leave payment
     #[serde(rename = "DEFAULT")]
+    #[default]
     Default,
     /// Leave cashed out instead of taken
     #[serde(rename = "CASHED_OUT")]
     CashedOut,
-}
-
-impl Default for PayOutType {
-    fn default() -> Self {
-        Self::Default
-    }
 }
 
 /// A period of leave within a leave application
@@ -138,7 +129,7 @@ impl ListParameters {
         let mut clauses = Vec::new();
 
         if let Some(employee_id) = &self.employee_id {
-            clauses.push(format!("EmployeeID==Guid(\"{}\")", employee_id));
+            clauses.push(format!("EmployeeID==Guid(\"{employee_id}\")"));
         }
 
         for (field, comparison, date) in [
@@ -405,9 +396,15 @@ impl LeaveApplication {
             }
         };
 
-        if response.leave_applications.is_empty() {
+        if let Some(value) = response.leave_applications.first() {
+            debug!(
+                "Response contains {} leave applications",
+                response.leave_applications.len()
+            );
+            Ok(value.clone())
+        } else {
             error!("Received empty leave applications array in response");
-            return Err(crate::error::Error::NotFound {
+            Err(crate::error::Error::NotFound {
                 entity: "LeaveApplication".to_string(),
                 url,
                 status_code: reqwest::StatusCode::NOT_FOUND,
@@ -415,14 +412,8 @@ impl LeaveApplication {
                     "Leave application with ID {leave_application_id} not found"
                 )),
                 span_trace: SpanTrace::capture(),
-            });
+            })
         }
-
-        debug!(
-            "Response contains {} leave applications",
-            response.leave_applications.len()
-        );
-        Ok(response.leave_applications.into_iter().next().unwrap())
     }
 
     /// Create a new leave application
@@ -449,22 +440,22 @@ impl LeaveApplication {
             }
         };
 
-        if response.leave_applications.is_empty() {
+        if let Some(value) = response.leave_applications.first() {
+            debug!(
+                "Response contains {} leave applications",
+                response.leave_applications.len()
+            );
+            Ok(value.clone())
+        } else {
             error!("Received empty leave applications array in response");
-            return Err(crate::error::Error::NotFound {
+            Err(crate::error::Error::NotFound {
                 entity: "LeaveApplication".to_string(),
                 url: ENDPOINT.to_string(),
                 status_code: reqwest::StatusCode::NOT_FOUND,
                 response_body: Some(format!("{response:?}")),
                 span_trace: SpanTrace::capture(),
-            });
+            })
         }
-
-        debug!(
-            "Response contains {} leave applications",
-            response.leave_applications.len()
-        );
-        Ok(response.leave_applications.into_iter().next().unwrap())
     }
 
     /// Update an existing leave application
@@ -494,22 +485,22 @@ impl LeaveApplication {
             }
         };
 
-        if response.leave_applications.is_empty() {
+        if let Some(value) = response.leave_applications.first() {
+            debug!(
+                "Response contains {} leave applications",
+                response.leave_applications.len()
+            );
+            Ok(value.clone())
+        } else {
             error!("Received empty leave applications array in response");
-            return Err(crate::error::Error::NotFound {
+            Err(crate::error::Error::NotFound {
                 entity: "LeaveApplication".to_string(),
                 url,
                 status_code: reqwest::StatusCode::NOT_FOUND,
                 response_body: Some(format!("{response:?}")),
                 span_trace: SpanTrace::capture(),
-            });
+            })
         }
-
-        debug!(
-            "Response contains {} leave applications",
-            response.leave_applications.len()
-        );
-        Ok(response.leave_applications.into_iter().next().unwrap())
     }
 
     /// Approve a leave application that is in REQUESTED status
@@ -539,18 +530,18 @@ impl LeaveApplication {
             }
         };
 
-        if response.leave_applications.is_empty() {
+        if let Some(value) = response.leave_applications.first() {
+            Ok(value.clone())
+        } else {
             error!("Received empty leave applications array in response");
-            return Err(crate::error::Error::NotFound {
+            Err(crate::error::Error::NotFound {
                 entity: "LeaveApplication".to_string(),
                 url,
                 status_code: reqwest::StatusCode::NOT_FOUND,
                 response_body: Some(format!("{response:?}")),
                 span_trace: SpanTrace::capture(),
-            });
+            })
         }
-
-        Ok(response.leave_applications.into_iter().next().unwrap())
     }
 
     /// Reject a leave application that is in REQUESTED status
@@ -580,18 +571,18 @@ impl LeaveApplication {
             }
         };
 
-        if response.leave_applications.is_empty() {
+        if let Some(value) = response.leave_applications.first() {
+            Ok(value.clone())
+        } else {
             error!("Received empty leave applications array in response");
-            return Err(crate::error::Error::NotFound {
+            Err(crate::error::Error::NotFound {
                 entity: "LeaveApplication".to_string(),
                 url,
                 status_code: reqwest::StatusCode::NOT_FOUND,
                 response_body: Some(format!("{response:?}")),
                 span_trace: SpanTrace::capture(),
-            });
+            })
         }
-
-        Ok(response.leave_applications.into_iter().next().unwrap())
     }
 }
 

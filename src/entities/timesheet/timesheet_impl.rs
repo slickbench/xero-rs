@@ -85,12 +85,6 @@ pub struct Timesheet {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
-pub struct TimesheetRequest {
-    pub timesheets: Vec<Timesheet>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "PascalCase")]
 pub struct TimesheetResponse {
     pub timesheets: Vec<Timesheet>,
 }

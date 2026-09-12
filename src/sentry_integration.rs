@@ -39,6 +39,8 @@ use crate::error::{Error, ErrorType, RateLimitType};
 /// This implementation captures relevant context from xero-rs errors
 /// as Sentry breadcrumbs, making it easy to track API call history.
 impl<'a> From<&'a Error> for Breadcrumb {
+    // One exhaustive match keeps every error variant's telemetry mapping visible.
+    #[allow(clippy::too_many_lines)]
     fn from(error: &'a Error) -> Self {
         let (category, message, data) = match error {
             Error::InvalidParameter(message) => {
@@ -203,6 +205,7 @@ impl<'a> From<&'a Error> for Breadcrumb {
 ///     });
 /// }
 /// ```
+#[must_use]
 pub fn error_to_sentry_context(error: &Error) -> BTreeMap<String, Value> {
     let mut context = BTreeMap::new();
 

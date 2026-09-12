@@ -81,7 +81,7 @@ impl ResponseContext {
     /// Maximum length for response body in error context (2KB)
     pub const MAX_BODY_LENGTH: usize = 2000;
 
-    /// Create a new ResponseContext, truncating body if needed
+    /// Create a new `ResponseContext`, truncating body if needed
     #[must_use]
     pub fn new(
         url: String,
@@ -110,13 +110,13 @@ impl ResponseContext {
     }
 }
 
-/// OAuth2 error response from Xero's identity server.
+/// `OAuth2` error response from Xero's identity server.
 ///
-/// This captures both standard OAuth2 error responses (RFC 6749 Section 5.2)
+/// This captures both standard `OAuth2` error responses (RFC 6749 Section 5.2)
 /// and Xero-specific error fields.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OAuth2ErrorResponse {
-    /// Standard OAuth2 error code (e.g., "invalid_client", "invalid_grant")
+    /// Standard `OAuth2` error code (e.g., "`invalid_client`", "`invalid_grant`")
     #[serde(default)]
     pub error: Option<String>,
     /// Human-readable error description
@@ -159,11 +159,11 @@ impl fmt::Display for OAuth2ErrorResponse {
 /// This enum represents the different types of errors returned by the Xero API.
 /// The `Type` field in the JSON response is used as a discriminator.
 ///
-/// # ValidationException
+/// # `ValidationException`
 /// The most common error type, returned when validation fails on submitted entities.
 ///
 /// **Note (v0.2.0-alpha.4 → v0.2.0-alpha.14):** The `elements` field uses `#[serde(default)]`
-/// to handle API inconsistencies. Some Xero APIs (like payroll) return ValidationException
+/// to handle API inconsistencies. Some Xero APIs (like payroll) return `ValidationException`
 /// without an Elements array, so it defaults to an empty vector when not present.
 ///
 /// ## Example Response
@@ -219,7 +219,7 @@ pub struct ValidationError {
     pub message: String,
 }
 
-/// The object being validated in a ValidationException.
+/// The object being validated in a `ValidationException`.
 ///
 /// Xero returns validation errors with the entity that failed validation.
 /// This enum uses `#[serde(untagged)]` to match based on field presence,
@@ -308,7 +308,7 @@ pub enum ValidationExceptionElementObject {
 pub struct ValidationExceptionElement {
     /// The validation error messages for this entity.
     pub validation_errors: Vec<ValidationError>,
-    /// The entity being validated (Quote, PurchaseOrder, or Unknown).
+    /// The entity being validated (Quote, `PurchaseOrder`, or Unknown).
     /// Fields from this enum variant are flattened into the parent struct.
     #[serde(flatten)]
     pub object: ValidationExceptionElementObject,
@@ -412,7 +412,7 @@ pub struct TimesheetValidationError {
     pub timesheet_lines: Vec<serde_json::Value>,
 }
 
-/// Format an OAuth2 error with detailed information, including raw response body for Parse errors.
+/// Format an `OAuth2` error with detailed information, including raw response body for Parse errors.
 fn format_oauth2_error(
     error: &oauth2::RequestTokenError<HttpClientError<reqwest::Error>, OAuth2ErrorResponse>,
 ) -> String {
@@ -614,14 +614,14 @@ pub enum Error {
 }
 
 impl Error {
-    /// Create a DeserializationError with full HTTP context.
+    /// Create a `DeserializationError` with full HTTP context.
     ///
     /// This constructor captures all the debugging information needed to diagnose
     /// why Xero returned non-JSON data (e.g., HTML error pages, maintenance messages).
     ///
     /// # Arguments
     ///
-    /// * `source` - The underlying serde_json parsing error
+    /// * `source` - The underlying `serde_json` parsing error
     /// * `url` - The URL that was called
     /// * `method` - The HTTP method (GET, POST, PUT, DELETE)
     /// * `status_code` - The HTTP status code returned
@@ -639,8 +639,8 @@ impl Error {
         // Calculate span: start at error column, extend ~100 chars or to end of body
         let col = source.column();
         let start = col.saturating_sub(1);
-        let len = response_body.len().saturating_sub(start).min(100).max(1);
-        let error_span = SourceSpan::new(start.into(), len.into());
+        let len = response_body.len().saturating_sub(start).clamp(1, 100);
+        let error_span = SourceSpan::new(start.into(), len);
 
         let context = ResponseContext::new(
             url.clone(),
@@ -680,9 +680,9 @@ impl Error {
     pub fn response_body(&self) -> Option<&str> {
         match self {
             Self::DeserializationError { response_body, .. } => Some(response_body),
-            Self::NotFound { response_body, .. } => response_body.as_deref(),
-            Self::RateLimitExceeded { response_body, .. } => response_body.as_deref(),
-            Self::ServerError { response_body, .. } => response_body.as_deref(),
+            Self::NotFound { response_body, .. }
+            | Self::RateLimitExceeded { response_body, .. }
+            | Self::ServerError { response_body, .. } => response_body.as_deref(),
             _ => None,
         }
     }
@@ -691,10 +691,10 @@ impl Error {
     #[must_use]
     pub fn url(&self) -> Option<&str> {
         match self {
-            Self::DeserializationError { url, .. } => Some(url),
-            Self::NotFound { url, .. } => Some(url),
-            Self::RateLimitExceeded { url, .. } => Some(url),
-            Self::ServerError { url, .. } => Some(url),
+            Self::DeserializationError { url, .. }
+            | Self::NotFound { url, .. }
+            | Self::RateLimitExceeded { url, .. }
+            | Self::ServerError { url, .. } => Some(url),
             _ => None,
         }
     }
@@ -704,9 +704,9 @@ impl Error {
     pub fn status_code(&self) -> Option<reqwest::StatusCode> {
         match self {
             Self::DeserializationError { context, .. } => Some(context.status_code),
-            Self::NotFound { status_code, .. } => Some(*status_code),
-            Self::RateLimitExceeded { status_code, .. } => Some(*status_code),
-            Self::ServerError { status_code, .. } => Some(*status_code),
+            Self::NotFound { status_code, .. }
+            | Self::RateLimitExceeded { status_code, .. }
+            | Self::ServerError { status_code, .. } => Some(*status_code),
             _ => None,
         }
     }
@@ -739,12 +739,12 @@ impl Error {
     #[must_use]
     pub fn span_trace(&self) -> Option<&SpanTrace> {
         match self {
-            Self::Request { span_trace, .. } => Some(span_trace),
-            Self::DeserializationError { span_trace, .. } => Some(span_trace),
-            Self::NotFound { span_trace, .. } => Some(span_trace),
-            Self::API { span_trace, .. } => Some(span_trace),
-            Self::RateLimitExceeded { span_trace, .. } => Some(span_trace),
-            Self::ServerError { span_trace, .. } => Some(span_trace),
+            Self::Request { span_trace, .. }
+            | Self::DeserializationError { span_trace, .. }
+            | Self::NotFound { span_trace, .. }
+            | Self::API { span_trace, .. }
+            | Self::RateLimitExceeded { span_trace, .. }
+            | Self::ServerError { span_trace, .. } => Some(span_trace),
             _ => None,
         }
     }
@@ -773,7 +773,7 @@ impl From<serde_json::Error> for Error {
         // For standalone serde errors without HTTP context, create minimal error
         let col = e.column().saturating_sub(1);
         Self::DeserializationError {
-            error_span: SourceSpan::new(col.into(), 1usize.into()),
+            error_span: SourceSpan::new(col.into(), 1usize),
             entity_type: "unknown".to_string(),
             method: "unknown".to_string(),
             url: "unknown".to_string(),

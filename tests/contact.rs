@@ -8,6 +8,7 @@ use std::env;
 use xero_rs::KeyPair;
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn list_contacts() -> Result<()> {
     test_utils::do_setup();
 
@@ -40,6 +41,7 @@ async fn list_contacts() -> Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
 async fn get_contact() -> Result<()> {
     test_utils::do_setup();
 

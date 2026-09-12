@@ -129,11 +129,14 @@ pub struct ValidationError {
 #[serde(rename_all = "PascalCase")]
 pub(crate) struct ListResponse {
     pub items: Vec<Item>,
-    pub status: String,
-    pub id: Uuid,
-    pub provider_name: String,
+    #[serde(rename = "Status")]
+    pub _status: String,
+    #[serde(rename = "Id")]
+    pub _id: Uuid,
+    #[serde(rename = "ProviderName")]
+    pub _provider_name: String,
     #[serde(rename = "DateTimeUTC")]
-    pub date_time_utc: Option<String>,
+    pub _date_time_utc: Option<String>,
 }
 
 impl From<ListResponse> for Vec<Item> {
@@ -448,7 +451,7 @@ pub async fn create(client: &Client, items: &[Builder]) -> Result<Vec<Item>> {
 
 /// Create a single item
 pub async fn create_single(client: &Client, item: &Builder) -> Result<Item> {
-    let items = create(client, &[item.clone()]).await?;
+    let items = create(client, std::slice::from_ref(item)).await?;
     items.into_iter().next().ok_or(Error::NotFound {
         entity: "Item".to_string(),
         url: ENDPOINT.to_string(),

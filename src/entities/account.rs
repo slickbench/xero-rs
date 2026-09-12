@@ -104,7 +104,7 @@ pub struct Account {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 
-    /// Tax type from TaxRates
+    /// Tax type from `TaxRates`
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tax_type: Option<String>,
 
@@ -237,7 +237,7 @@ impl ListParameters {
             AccountType::TermLiability => "TERMLIAB",
             AccountType::Payg => "PAYG",
         };
-        self.with_where(format!("Type==\"{}\"", type_str))
+        self.with_where(format!("Type==\"{type_str}\""))
     }
 
     /// Filter by account status
@@ -248,7 +248,7 @@ impl ListParameters {
             AccountStatus::Archived => "ARCHIVED",
             AccountStatus::Deleted => "DELETED",
         };
-        self.with_where(format!("Status==\"{}\"", status_str))
+        self.with_where(format!("Status==\"{status_str}\""))
     }
 
     /// Filter by account class
@@ -261,7 +261,7 @@ impl ListParameters {
             AccountClass::Liability => "LIABILITY",
             AccountClass::Revenue => "REVENUE",
         };
-        self.with_where(format!("Class==\"{}\"", class_str))
+        self.with_where(format!("Class==\"{class_str}\""))
     }
 }
 
@@ -287,7 +287,7 @@ pub struct Builder {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 
-    /// Tax type from TaxRates
+    /// Tax type from `TaxRates`
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tax_type: Option<String>,
 
