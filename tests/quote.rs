@@ -256,6 +256,7 @@ async fn quote_pdf() -> Result<()> {
         match client.quotes().get_pdf(quote_id).await {
             Ok(pdf_data) => {
                 info!("Downloaded PDF with {} bytes", pdf_data.len());
+                assert!(pdf_data.starts_with(b"%PDF-"), "expected a PDF");
 
                 // Optionally save for manual inspection
                 let pdf_path = format!("quote_{}.pdf", quote_id);
@@ -323,7 +324,7 @@ async fn quote_attachments() -> Result<()> {
                     let attachment_id = attachments[0].attachment_id;
                     match client
                         .quotes()
-                        .get_attachment(quote_id, attachment_id)
+                        .get_attachment(quote_id, attachment_id, &attachments[0].mime_type)
                         .await
                     {
                         Ok(data) => info!("Downloaded attachment with {} bytes", data.len()),
@@ -334,7 +335,7 @@ async fn quote_attachments() -> Result<()> {
                     let filename = &attachments[0].file_name;
                     match client
                         .quotes()
-                        .get_attachment_by_filename(quote_id, filename)
+                        .get_attachment_by_filename(quote_id, filename, &attachments[0].mime_type)
                         .await
                     {
                         Ok(data) => info!(

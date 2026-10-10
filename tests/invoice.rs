@@ -267,6 +267,7 @@ async fn invoice_pdf() -> Result<()> {
         match client.invoices().get_pdf(invoice_id).await {
             Ok(pdf_data) => {
                 info!("Downloaded PDF with {} bytes", pdf_data.len());
+                assert!(pdf_data.starts_with(b"%PDF-"), "expected a PDF");
 
                 // Optionally save for manual inspection
                 let pdf_path = format!("invoice_{}.pdf", invoice_id);
@@ -334,7 +335,7 @@ async fn invoice_attachments() -> Result<()> {
                     let attachment_id = attachments[0].attachment_id;
                     match client
                         .invoices()
-                        .get_attachment(invoice_id, attachment_id)
+                        .get_attachment(invoice_id, attachment_id, &attachments[0].mime_type)
                         .await
                     {
                         Ok(data) => info!("Downloaded attachment with {} bytes", data.len()),
@@ -345,7 +346,7 @@ async fn invoice_attachments() -> Result<()> {
                     let filename = &attachments[0].file_name;
                     match client
                         .invoices()
-                        .get_attachment_by_filename(invoice_id, filename)
+                        .get_attachment_by_filename(invoice_id, filename, &attachments[0].mime_type)
                         .await
                     {
                         Ok(data) => info!(

@@ -11,6 +11,11 @@ use crate::{
     utils::{date_format::xero_datetime_format, serde_helpers::empty_string_as_none},
 };
 
+use super::document;
+
+/// The resource's path segment in the Accounting API.
+const RESOURCE: &str = "Accounts";
+
 pub const ENDPOINT: &str = "https://api.xero.com/api.xro/2.0/Accounts/";
 
 /// Account types in Xero
@@ -518,41 +523,22 @@ pub async fn list_attachments(client: &Client, account_id: Uuid) -> Result<Vec<A
     Ok(response.attachments)
 }
 
-/// Get a specific attachment by ID
+/// Retrieve the content of a file attached to an account. `content_type` is the attachment's
+/// `mime_type`: Xero answers the file only to a request that accepts it.
 pub async fn get_attachment(
     client: &Client,
-    account_id: Uuid,
+    id: Uuid,
     attachment_id: Uuid,
+    content_type: &str,
 ) -> Result<Vec<u8>> {
-    let endpoint = XeroEndpoint::Custom(vec![
-        "Accounts".to_string(),
-        account_id.to_string(),
-        "Attachments".to_string(),
-        attachment_id.to_string(),
-    ]);
-
-    let url = endpoint.to_url()?;
-    let response = client
-        .build_request(reqwest::Method::GET, url)
-        .await
-        .send()
-        .await?;
-
-    let status = response.status();
-
-    if status.is_success() {
-        Ok(response.bytes().await?.to_vec())
-    } else {
-        Err(Error::NotFound {
-            entity: "Account Attachment".to_string(),
-            url: endpoint.to_string(),
-            status_code: status,
-            response_body: Some(format!(
-                "Failed to retrieve attachment for account with ID {account_id}"
-            )),
-            span_trace: SpanTrace::capture(),
-        })
-    }
+    document::get_attachment(
+        client,
+        RESOURCE,
+        id,
+        &attachment_id.to_string(),
+        content_type,
+    )
+    .await
 }
 
 /// Upload an attachment to an account

@@ -4,12 +4,19 @@ use time::{Date, OffsetDateTime};
 use uuid::Uuid;
 
 use crate::{
+    Client,
     contact::{Contact, ContactIdentifier},
     entities::{invoice, line_item},
-    error::ValidationError,
+    error::{Result, ValidationError},
     line_item::{LineAmountType, LineItem},
     utils::date_format::{xero_date_format, xero_date_format_option, xero_datetime_format},
 };
+
+use super::document;
+pub use super::document::{HistoryRecord, HistoryRecords, HistoryRecordsRequest};
+
+/// The resource's path segment in the Accounting API.
+const RESOURCE: &str = "PurchaseOrders";
 
 pub const ENDPOINT: &str = "https://api.xero.com/api.xro/2.0/PurchaseOrders/";
 
@@ -174,6 +181,25 @@ impl<'a> PurchaseOrdersRequest<'a> {
             purchase_orders: vec![order],
         }
     }
+}
+
+/// Retrieve a purchase order as the PDF Xero renders for it - what a supplier is sent.
+pub async fn get_pdf(client: &Client, id: Uuid) -> Result<Vec<u8>> {
+    document::get_pdf(client, RESOURCE, id).await
+}
+
+/// Retrieve the history of a purchase order.
+pub async fn get_history(client: &Client, id: Uuid) -> Result<Vec<HistoryRecord>> {
+    document::get_history(client, RESOURCE, id).await
+}
+
+/// Add a note to the history of a purchase order.
+pub async fn create_history(
+    client: &Client,
+    id: Uuid,
+    details: &str,
+) -> Result<Vec<HistoryRecord>> {
+    document::create_history(client, RESOURCE, id, details).await
 }
 
 #[cfg(test)]

@@ -637,16 +637,27 @@ impl Client {
         }
     }
 
-    /// Build a request object with authentication headers.
+    /// Build a request object with authentication headers, asking for JSON.
     pub(crate) async fn build_request<U: IntoUrl + fmt::Debug>(
         &self,
         method: Method,
         url: U,
     ) -> RequestBuilder {
+        self.build_request_accepting(method, url, "application/json")
+            .await
+    }
+
+    /// Build a request object with authentication headers, asking for `accept`.
+    async fn build_request_accepting<U: IntoUrl + fmt::Debug>(
+        &self,
+        method: Method,
+        url: U,
+        accept: &str,
+    ) -> RequestBuilder {
         self.build_http_client()
             .await
             .request(method, url)
-            .header(header::ACCEPT, "application/json")
+            .header(header::ACCEPT, accept)
     }
 
     /// Send a request with optional concurrency limiting.
@@ -1080,6 +1091,46 @@ impl Client {
         self.execute_get(url, query).await
     }
 
+    /// Perform a `GET` request for a binary body - a PDF, an attachment - with the same pacing,
+    /// token refresh, rate-limit retry and error mapping as every JSON request.
+    ///
+    /// `accept` is the media type wanted, and Xero decides what it returns by it: the same
+    /// resource answers its JSON to `application/json` and its PDF to `application/pdf`.
+    #[instrument(
+        skip(self),
+        fields(
+            tags.http_method = "GET",
+            tags.xero_endpoint = %endpoint,
+            request_id = %Uuid::new_v4(),
+        )
+    )]
+    pub async fn get_bytes(&self, endpoint: XeroEndpoint, accept: &str) -> Result<Vec<u8>> {
+        let url = endpoint.to_url()?;
+        let mut attempts = 0;
+        let mut token_refreshed = false;
+
+        loop {
+            let request = self
+                .build_request_accepting(Method::GET, url.clone(), accept)
+                .await;
+            let response = self.send_with_concurrency_limit(request).await?;
+            self.update_rate_limit_info(response.headers()).await;
+
+            let error = match Self::check_response(response, "GET", accept).await {
+                Ok(response) => return Ok(response.bytes().await?.to_vec()),
+                Err(error) => error,
+            };
+            if self
+                .handle_error_for_retry(&error, &mut token_refreshed, &mut attempts)
+                .await
+                .is_ok_and(|should_retry| should_retry)
+            {
+                continue;
+            }
+            return Err(error);
+        }
+    }
+
     /// Perform a `GET` request with If-Modified-Since header for incremental syncing.
     ///
     /// This method is useful for sync operations where you only want to fetch records
@@ -1353,20 +1404,76 @@ impl Client {
         self.execute_delete(url).await
     }
 
+    /// Read a response as `T`. Any 2xx is parsed, and an empty body - the `204` that emailing an
+    /// invoice answers - as JSON `null`, which `()`, `Option` and `serde_json::Value` accept.
     #[instrument(skip(response))]
-    // Keep status-specific diagnostic construction together for auditing.
-    #[allow(clippy::too_many_lines)]
     async fn handle_response<T: DeserializeOwned + Sized>(
         response: reqwest::Response,
         method: &str,
     ) -> Result<T> {
-        let status = response.status();
-        let url = response.url().to_string();
         let entity_type = std::any::type_name::<T>()
             .split("::")
             .last()
             .unwrap_or("Unknown")
             .to_string();
+        let response = Self::check_response(response, method, &entity_type).await?;
+        let status = response.status();
+        let url = response.url().to_string();
+
+        let text = response.text().await?;
+        tracing::trace!(response_size = text.len(), "Response received");
+
+        let body = if text.trim().is_empty() {
+            "null"
+        } else {
+            text.as_str()
+        };
+        serde_json::from_str(body).map_err(|error| {
+            Self::deserialize_failure(error, &url, method, status, &text, &entity_type)
+        })
+    }
+
+    /// Log a body that did not parse as what was expected, and make it the error.
+    fn deserialize_failure(
+        error: serde_json::Error,
+        url: &str,
+        method: &str,
+        status: StatusCode,
+        text: &str,
+        entity_type: &str,
+    ) -> Error {
+        tracing::error!(
+            url = %url,
+            method = %method,
+            status = %status,
+            entity_type = %entity_type,
+            error_column = error.column(),
+            response_body_len = text.len(),
+            "Xero API deserialization error: {}",
+            error
+        );
+        Error::deserialization_error(
+            error,
+            url.to_string(),
+            method,
+            status,
+            text.to_string(),
+            entity_type.to_string(),
+        )
+    }
+
+    /// Pass a successful response through, and turn any other into the error it describes. The
+    /// one error mapping for every request, whatever its body.
+    #[instrument(skip(response))]
+    // Keep status-specific diagnostic construction together for auditing.
+    #[allow(clippy::too_many_lines)]
+    async fn check_response(
+        response: reqwest::Response,
+        method: &str,
+        entity_type: &str,
+    ) -> Result<reqwest::Response> {
+        let status = response.status();
+        let url = response.url().to_string();
 
         tracing::debug!(
             "Response from {} {}: status={}, entity_type={}",
@@ -1387,6 +1494,10 @@ impl Client {
                 rate_limit_info.minute_limit_remaining,
                 rate_limit_info.app_minute_limit_remaining
             );
+        }
+
+        if status.is_success() {
+            return Ok(response);
         }
 
         // Handle rate limiting (429 Too Many Requests)
@@ -1435,39 +1546,16 @@ impl Client {
         let text = response.text().await?;
         tracing::trace!(response_size = text.len(), "Response received");
 
-        let handle_deserialize_error = {
-            let text = text.clone();
-            let url = url.clone();
-            let entity_type = entity_type.clone();
-            let method = method.to_string();
-            move |e: serde_json::Error| {
-                tracing::error!(
-                    url = %url,
-                    method = %method,
-                    status = %status,
-                    entity_type = %entity_type,
-                    error_column = e.column(),
-                    response_body_len = text.len(),
-                    "Xero API deserialization error: {}",
-                    e
-                );
-                Error::deserialization_error(
-                    e,
-                    url.clone(),
-                    &method,
-                    status,
-                    text.clone(),
-                    entity_type.clone(),
-                )
-            }
+        let handle_deserialize_error = |error: serde_json::Error| {
+            Self::deserialize_failure(error, &url, method, status, &text, entity_type)
         };
 
         match status {
             StatusCode::NOT_FOUND => Err(Error::NotFound {
-                entity: entity_type,
-                url,
+                entity: entity_type.to_string(),
+                url: url.clone(),
                 status_code: status,
-                response_body: Some(text),
+                response_body: Some(text.clone()),
                 span_trace: SpanTrace::capture(),
             }),
             StatusCode::UNAUTHORIZED => {
@@ -1490,10 +1578,6 @@ impl Client {
                 }
             }
             status => match status {
-                StatusCode::OK => match serde_json::from_str(&text) {
-                    Ok(result) => Ok(result),
-                    Err(e) => Err(handle_deserialize_error(e)),
-                },
                 StatusCode::FORBIDDEN => Err(Error::Forbidden(
                     serde_json::from_str(&text).map_err(handle_deserialize_error)?,
                 )),
@@ -1585,8 +1669,8 @@ impl Client {
                         Err(Error::ServerError {
                             status_code: status,
                             message,
-                            response_body: Some(text),
-                            url,
+                            response_body: Some(text.clone()),
+                            url: url.clone(),
                             span_trace: SpanTrace::capture(),
                         })
                     }
@@ -1744,10 +1828,16 @@ impl AccountsApi<'_> {
         account::list_attachments(self.client, account_id).await
     }
 
-    /// Get a specific attachment by ID
+    /// Get a specific attachment by ID. `content_type` is its `mime_type`: Xero answers the
+    /// file only to a request that accepts it.
     #[instrument(skip(self))]
-    pub async fn get_attachment(&self, account_id: Uuid, attachment_id: Uuid) -> Result<Vec<u8>> {
-        account::get_attachment(self.client, account_id, attachment_id).await
+    pub async fn get_attachment(
+        &self,
+        account_id: Uuid,
+        attachment_id: Uuid,
+        content_type: &str,
+    ) -> Result<Vec<u8>> {
+        account::get_attachment(self.client, account_id, attachment_id, content_type).await
     }
 
     /// Upload an attachment to an account
@@ -1886,24 +1976,27 @@ impl InvoicesApi<'_> {
         invoice::list_attachments(self.client, invoice_id).await
     }
 
-    /// Get a specific attachment by ID
+    /// Get a specific attachment by ID. `content_type` is its `mime_type`: Xero answers the
+    /// file only to a request that accepts it.
     #[instrument(skip(self))]
     pub async fn get_attachment(
-        &mut self,
+        &self,
         invoice_id: Uuid,
         attachment_id: Uuid,
+        content_type: &str,
     ) -> Result<Vec<u8>> {
-        invoice::get_attachment(self.client, invoice_id, attachment_id).await
+        invoice::get_attachment(self.client, invoice_id, attachment_id, content_type).await
     }
 
-    /// Get an attachment by filename
+    /// Get an attachment by filename. `content_type` is its `mime_type`.
     #[instrument(skip(self))]
     pub async fn get_attachment_by_filename(
-        &mut self,
+        &self,
         invoice_id: Uuid,
         filename: &str,
+        content_type: &str,
     ) -> Result<Vec<u8>> {
-        invoice::get_attachment_by_filename(self.client, invoice_id, filename).await
+        invoice::get_attachment_by_filename(self.client, invoice_id, filename, content_type).await
     }
 
     /// Upload an attachment to an invoice
@@ -2015,6 +2108,31 @@ impl PurchaseOrdersApi<'_> {
                 span_trace: SpanTrace::capture(),
             })
     }
+
+    /// Get the purchase order as the PDF Xero renders for it - what a supplier is sent
+    #[instrument(skip(self))]
+    pub async fn get_pdf(&self, purchase_order_id: Uuid) -> Result<Vec<u8>> {
+        purchase_order::get_pdf(self.client, purchase_order_id).await
+    }
+
+    /// Get the history for a purchase order
+    #[instrument(skip(self))]
+    pub async fn get_history(
+        &self,
+        purchase_order_id: Uuid,
+    ) -> Result<Vec<purchase_order::HistoryRecord>> {
+        purchase_order::get_history(self.client, purchase_order_id).await
+    }
+
+    /// Add a note to a purchase order's history
+    #[instrument(skip(self))]
+    pub async fn create_history(
+        &self,
+        purchase_order_id: Uuid,
+        details: &str,
+    ) -> Result<Vec<purchase_order::HistoryRecord>> {
+        purchase_order::create_history(self.client, purchase_order_id, details).await
+    }
 }
 
 /// API handler for Quotes endpoints
@@ -2088,20 +2206,27 @@ impl QuotesApi<'_> {
         quote::list_attachments(self.client, quote_id).await
     }
 
-    /// Get a specific attachment by ID
+    /// Get a specific attachment by ID. `content_type` is its `mime_type`: Xero answers the
+    /// file only to a request that accepts it.
     #[instrument(skip(self))]
-    pub async fn get_attachment(&self, quote_id: Uuid, attachment_id: Uuid) -> Result<Vec<u8>> {
-        quote::get_attachment(self.client, quote_id, attachment_id).await
+    pub async fn get_attachment(
+        &self,
+        quote_id: Uuid,
+        attachment_id: Uuid,
+        content_type: &str,
+    ) -> Result<Vec<u8>> {
+        quote::get_attachment(self.client, quote_id, attachment_id, content_type).await
     }
 
-    /// Get an attachment by filename
+    /// Get an attachment by filename. `content_type` is its `mime_type`.
     #[instrument(skip(self))]
     pub async fn get_attachment_by_filename(
         &self,
         quote_id: Uuid,
         filename: &str,
+        content_type: &str,
     ) -> Result<Vec<u8>> {
-        quote::get_attachment_by_filename(self.client, quote_id, filename).await
+        quote::get_attachment_by_filename(self.client, quote_id, filename, content_type).await
     }
 
     /// Upload an attachment to a quote
@@ -2649,7 +2774,7 @@ impl LeaveTypesApi<'_> {
 }
 
 #[cfg(test)]
-pub(crate) fn leave_test_client() -> Client {
+pub(crate) fn test_client() -> Client {
     Client {
         token_state: Arc::new(RwLock::new(TokenState {
             access_token: AccessToken::new("test-token".into()),
@@ -2662,6 +2787,98 @@ pub(crate) fn leave_test_client() -> Client {
         concurrency_limiter: None,
         rate_limiter: None,
         default_unitdp: None,
+    }
+}
+
+#[cfg(test)]
+mod response_tests {
+    use super::test_client;
+    use crate::{Error, XeroEndpoint};
+    use serde_json::{Value, json};
+    use warp::Filter;
+
+    async fn serve<F>(route: F) -> (String, tokio::task::JoinHandle<()>)
+    where
+        F: Filter + Clone + Send + Sync + 'static,
+        F::Extract: warp::Reply,
+    {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/document", listener.local_addr().unwrap());
+        let server = tokio::spawn(warp::serve(route).incoming(listener).run());
+        (url, server)
+    }
+
+    #[tokio::test]
+    async fn get_bytes_asks_for_the_media_type_and_returns_the_body() {
+        let route = warp::header::<String>("accept").map(|accept: String| {
+            assert_eq!(accept, "application/pdf");
+            warp::http::Response::builder()
+                .header("content-type", "application/pdf")
+                .body(b"%PDF-1.4 body".to_vec())
+                .unwrap()
+        });
+        let (url, server) = serve(route).await;
+
+        let bytes = test_client()
+            .get_bytes(XeroEndpoint::from_string(url), "application/pdf")
+            .await
+            .unwrap();
+        server.abort();
+
+        assert_eq!(bytes, b"%PDF-1.4 body");
+    }
+
+    #[tokio::test]
+    async fn get_bytes_maps_a_failure_like_any_request() {
+        let route = warp::any().map(|| {
+            warp::reply::with_status(
+                warp::reply::json(&json!({"Message": "not here"})),
+                warp::http::StatusCode::NOT_FOUND,
+            )
+        });
+        let (url, server) = serve(route).await;
+
+        let result = test_client()
+            .get_bytes(XeroEndpoint::from_string(url), "application/pdf")
+            .await;
+        server.abort();
+
+        assert!(matches!(result, Err(Error::NotFound { .. })), "{result:?}");
+    }
+
+    #[tokio::test]
+    async fn an_empty_success_reads_as_null() {
+        // Emailing an invoice answers 204 with no body.
+        let route = warp::any()
+            .map(|| warp::reply::with_status(warp::reply(), warp::http::StatusCode::NO_CONTENT));
+        let (url, server) = serve(route).await;
+
+        let result: Value = test_client()
+            .post_endpoint(XeroEndpoint::from_string(url), &json!({}))
+            .await
+            .unwrap();
+        server.abort();
+
+        assert_eq!(result, Value::Null);
+    }
+
+    #[tokio::test]
+    async fn a_success_other_than_200_is_parsed() {
+        let route = warp::any().map(|| {
+            warp::reply::with_status(
+                warp::reply::json(&json!({"Status": "OK"})),
+                warp::http::StatusCode::CREATED,
+            )
+        });
+        let (url, server) = serve(route).await;
+
+        let result: Value = test_client()
+            .post_endpoint(XeroEndpoint::from_string(url), &json!({}))
+            .await
+            .unwrap();
+        server.abort();
+
+        assert_eq!(result["Status"], "OK");
     }
 }
 

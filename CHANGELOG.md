@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0-alpha.28]
+
+### Added
+- `purchase_orders().get_pdf(id)`, `get_history(id)` and `create_history(id, details)`.
+- `Client::get_bytes(endpoint, accept)`: binary downloads (PDFs, attachments) with the same pacing, token refresh, rate-limit retry and error mapping as JSON requests.
+- `entities::document`: the one `HistoryRecord` type and the history, PDF and attachment calls every document shares. `invoice::`, `quote::`, `item::` and `purchase_order::HistoryRecord` re-export it.
+- `examples/document_pdf.rs`: download a purchase order, invoice or quote PDF.
+
+### Fixed
+- `get_pdf` for invoices and quotes never returned a PDF: it asked for `{Resource}/{id}/pdf`, which the live API answers with a 404 (the OpenAPI spec and SDKs name that path), and sent `Accept: application/json`. It now asks for the document's own URL as `application/pdf`.
+- `invoices().email()` always failed: only a `200` was parsed, and the endpoint answers `204` with no body. Any 2xx is parsed now, an empty body as JSON `null`.
+- `HistoryRecord::date_utc` was never filled; it now reads Xero's `DateUTCString`.
+- PDF and attachment downloads skipped the rate limiter, token refresh and retries, and mapped every failure to `NotFound`.
+
+### Changed
+- **Breaking:** `get_attachment` and `get_attachment_by_filename` (accounts, invoices, quotes) take the attachment's `content_type` (its `mime_type`). Xero returns the file only to a request that accepts its type; asked for JSON, it describes the attachment instead.
+- `invoices().get_attachment*` take `&self` rather than `&mut self`.
+
 ## [0.2.0-alpha.27]
 
 - Add `leave_applications().list_all_v2()` to fetch complete snapshots with duplicate-page detection.

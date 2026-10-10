@@ -656,7 +656,7 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/leave", listener.local_addr().unwrap());
         let server = tokio::spawn(warp::serve(route).incoming(listener).run());
-        let result = LeaveApplication::list_all_from(&crate::client::leave_test_client(), &url)
+        let result = LeaveApplication::list_all_from(&crate::client::test_client(), &url)
             .await
             .unwrap();
         server.abort();
@@ -675,8 +675,7 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/leave", listener.local_addr().unwrap());
         let server = tokio::spawn(warp::serve(route).incoming(listener).run());
-        let result =
-            LeaveApplication::list_all_from(&crate::client::leave_test_client(), &url).await;
+        let result = LeaveApplication::list_all_from(&crate::client::test_client(), &url).await;
         server.abort();
         assert!(matches!(result, Err(crate::Error::InvalidParameter(_))));
     }
@@ -701,8 +700,7 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/leave", listener.local_addr().unwrap());
         let server = tokio::spawn(warp::serve(route).incoming(listener).run());
-        let result =
-            LeaveApplication::list_all_from(&crate::client::leave_test_client(), &url).await;
+        let result = LeaveApplication::list_all_from(&crate::client::test_client(), &url).await;
         server.abort();
         assert!(result.is_err());
     }
@@ -731,7 +729,7 @@ mod tests {
         let url = format!("http://{}/leave", listener.local_addr().unwrap());
         let server = tokio::spawn(warp::serve(route).incoming(listener).run());
         let result = LeaveApplication::list_internal(
-            &crate::client::leave_test_client(),
+            &crate::client::test_client(),
             &url,
             None,
             Some("2026-09-10T10:00:00+10:00".into()),
@@ -745,7 +743,7 @@ mod tests {
 
     #[tokio::test]
     async fn invalid_parameters_fail_before_network_request() {
-        let client = crate::client::leave_test_client();
+        let client = crate::client::test_client();
         let parameters = ListParameters {
             page: Some(0),
             ..Default::default()

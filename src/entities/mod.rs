@@ -9,6 +9,7 @@ use self::{
 pub mod account;
 pub mod connection;
 pub mod contact;
+pub mod document;
 pub mod invoice;
 pub mod item;
 pub mod line_item;

@@ -14,6 +14,12 @@ use crate::{
     utils::date_format::xero_datetime_format,
 };
 
+use super::document;
+pub use super::document::{HistoryRecord, HistoryRecords, HistoryRecordsRequest};
+
+/// The resource's path segment in the Accounting API.
+const RESOURCE: &str = "Items";
+
 pub const ENDPOINT: &str = "https://api.xero.com/api.xro/2.0/Items/";
 
 /// Details for purchasing an item
@@ -321,40 +327,6 @@ pub(crate) struct ItemWrapper<'a> {
     pub items: Vec<&'a Builder>,
 }
 
-/// History record for an item
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "PascalCase")]
-pub struct HistoryRecord {
-    /// The details of the history record
-    pub details: String,
-
-    /// The date and time of the history record
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub date_utc: Option<String>,
-
-    /// The user who created the history record
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub user: Option<String>,
-
-    /// The changes made
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub changes: Option<String>,
-}
-
-/// Wrapper for history records response
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct HistoryRecords {
-    pub history_records: Vec<HistoryRecord>,
-}
-
-/// Wrapper for posting history records
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct HistoryRecordsRequest {
-    pub history_records: Vec<HistoryRecord>,
-}
-
 impl EntityEndpoint<Item, ListParameters> for Item {
     fn endpoint() -> &'static str {
         ENDPOINT
@@ -519,31 +491,16 @@ pub async fn delete(client: &Client, item_id: Uuid) -> Result<()> {
     client.delete_endpoint(endpoint).await
 }
 
-/// Get the history for an item
-pub async fn get_history(client: &Client, item_id: Uuid) -> Result<Vec<HistoryRecord>> {
-    let endpoint = XeroEndpoint::Custom(vec![format!("Items/{}/History", item_id)]);
-    let response: HistoryRecords = client.get_endpoint(endpoint, &()).await?;
-    Ok(response.history_records)
+/// Retrieve the history of an item.
+pub async fn get_history(client: &Client, id: Uuid) -> Result<Vec<HistoryRecord>> {
+    document::get_history(client, RESOURCE, id).await
 }
 
-/// Create a history record for an item
+/// Add a note to the history of an item.
 pub async fn create_history(
     client: &Client,
-    item_id: Uuid,
+    id: Uuid,
     details: &str,
 ) -> Result<Vec<HistoryRecord>> {
-    let history_record = HistoryRecord {
-        details: details.to_string(),
-        date_utc: None,
-        user: None,
-        changes: None,
-    };
-
-    let request = HistoryRecordsRequest {
-        history_records: vec![history_record],
-    };
-
-    let endpoint = XeroEndpoint::Custom(vec![format!("Items/{}/History", item_id)]);
-    let response: HistoryRecords = client.put_endpoint(endpoint, &request).await?;
-    Ok(response.history_records)
+    document::create_history(client, RESOURCE, id, details).await
 }

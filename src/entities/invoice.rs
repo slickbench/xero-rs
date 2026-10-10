@@ -18,7 +18,11 @@ use crate::{
     utils::date_format::{xero_date_format, xero_date_format_option, xero_datetime_format},
 };
 
-use super::line_item;
+pub use super::document::{HistoryRecord, HistoryRecords, HistoryRecordsRequest};
+use super::{document, line_item};
+
+/// The resource's path segment in the Accounting API.
+const RESOURCE: &str = "Invoices";
 
 pub const ENDPOINT: &str = "https://api.xero.com/api.xro/2.0/Invoices/";
 
@@ -465,40 +469,6 @@ impl Builder {
     }
 }
 
-/// History record for an invoice
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "PascalCase")]
-pub struct HistoryRecord {
-    /// The details of the history record
-    pub details: String,
-
-    /// The date and time of the history record
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub date_utc: Option<String>,
-
-    /// The user who created the history record
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub user: Option<String>,
-
-    /// The changes made
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub changes: Option<String>,
-}
-
-/// Wrapper for history records response
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct HistoryRecords {
-    pub history_records: Vec<HistoryRecord>,
-}
-
-/// Wrapper for posting history records
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct HistoryRecordsRequest {
-    pub history_records: Vec<HistoryRecord>,
-}
-
 /// Attachment details for an invoice
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "PascalCase")]
@@ -659,37 +629,9 @@ pub async fn update_or_create(client: &Client, invoice: &Builder) -> Result<Invo
         })
 }
 
-/// Retrieve a invoice as a PDF file.
-#[instrument(skip(client))]
-pub async fn get_pdf(client: &Client, invoice_id: Uuid) -> Result<Vec<u8>> {
-    let endpoint = XeroEndpoint::Custom(vec![
-        "Invoices".to_string(),
-        invoice_id.to_string(),
-        "pdf".to_string(),
-    ]);
-
-    let url = endpoint.to_url()?;
-    let response = client
-        .build_request(reqwest::Method::GET, url)
-        .await
-        .send()
-        .await?;
-
-    let status = response.status();
-
-    if status.is_success() {
-        Ok(response.bytes().await?.to_vec())
-    } else {
-        Err(Error::NotFound {
-            entity: "Invoice PDF".to_string(),
-            url: endpoint.to_string(),
-            status_code: status,
-            response_body: Some(format!(
-                "Failed to retrieve PDF for invoice with ID {invoice_id}"
-            )),
-            span_trace: SpanTrace::capture(),
-        })
-    }
+/// Retrieve an invoice as the PDF Xero renders for it.
+pub async fn get_pdf(client: &Client, id: Uuid) -> Result<Vec<u8>> {
+    document::get_pdf(client, RESOURCE, id).await
 }
 
 /// Get the online invoice URL
@@ -719,43 +661,18 @@ pub async fn email(client: &Client, invoice_id: Uuid) -> Result<()> {
     Ok(())
 }
 
-/// Get history records for an invoice
-pub async fn get_history(client: &Client, invoice_id: Uuid) -> Result<Vec<HistoryRecord>> {
-    let endpoint = XeroEndpoint::from_string(format!(
-        "https://api.xero.com/api.xro/2.0/Invoices/{invoice_id}/history"
-    ));
-    let empty_tuple = ();
-    let response: HistoryRecords = client.get_endpoint(endpoint, &empty_tuple).await?;
-    Ok(response.history_records)
+/// Retrieve the history of an invoice.
+pub async fn get_history(client: &Client, id: Uuid) -> Result<Vec<HistoryRecord>> {
+    document::get_history(client, RESOURCE, id).await
 }
 
-/// Create a history record for a specific invoice.
-#[instrument(skip(client))]
+/// Add a note to the history of an invoice.
 pub async fn create_history(
     client: &Client,
-    invoice_id: Uuid,
+    id: Uuid,
     details: &str,
 ) -> Result<Vec<HistoryRecord>> {
-    let endpoint = XeroEndpoint::Custom(vec![
-        "Invoices".to_string(),
-        invoice_id.to_string(),
-        "History".to_string(),
-    ]);
-
-    let history_record = HistoryRecord {
-        details: details.to_string(),
-        date_utc: None,
-        user: None,
-        changes: None,
-    };
-
-    let request = HistoryRecordsRequest {
-        history_records: vec![history_record],
-    };
-
-    let response: HistoryRecords = client.put_endpoint(endpoint, &request).await?;
-
-    Ok(response.history_records)
+    document::create_history(client, RESOURCE, id, details).await
 }
 
 /// List attachments for an invoice
@@ -768,80 +685,33 @@ pub async fn list_attachments(client: &Client, invoice_id: Uuid) -> Result<Vec<A
     Ok(response.attachments)
 }
 
-/// Get a specific attachment by ID.
-#[instrument(skip(client))]
+/// Retrieve the content of a file attached to an invoice. `content_type` is the attachment's
+/// `mime_type`: Xero answers the file only to a request that accepts it.
 pub async fn get_attachment(
     client: &Client,
-    invoice_id: Uuid,
+    id: Uuid,
     attachment_id: Uuid,
+    content_type: &str,
 ) -> Result<Vec<u8>> {
-    let endpoint = XeroEndpoint::Custom(vec![
-        "Invoices".to_string(),
-        invoice_id.to_string(),
-        "Attachments".to_string(),
-        attachment_id.to_string(),
-    ]);
-
-    let url = endpoint.to_url()?;
-    let response = client
-        .build_request(reqwest::Method::GET, url)
-        .await
-        .send()
-        .await?;
-
-    let status = response.status();
-
-    if status.is_success() {
-        Ok(response.bytes().await?.to_vec())
-    } else {
-        Err(Error::NotFound {
-            entity: "Invoice Attachment".to_string(),
-            url: endpoint.to_string(),
-            status_code: status,
-            response_body: Some(format!(
-                "Failed to retrieve attachment for invoice with ID {invoice_id}"
-            )),
-            span_trace: SpanTrace::capture(),
-        })
-    }
+    document::get_attachment(
+        client,
+        RESOURCE,
+        id,
+        &attachment_id.to_string(),
+        content_type,
+    )
+    .await
 }
 
-/// Get an attachment by filename.
-#[instrument(skip(client))]
+/// Retrieve the content of a file attached to an invoice, by its file name. `content_type` is the
+/// attachment's `mime_type`.
 pub async fn get_attachment_by_filename(
     client: &Client,
-    invoice_id: Uuid,
+    id: Uuid,
     filename: &str,
+    content_type: &str,
 ) -> Result<Vec<u8>> {
-    let endpoint = XeroEndpoint::Custom(vec![
-        "Invoices".to_string(),
-        invoice_id.to_string(),
-        "Attachments".to_string(),
-        filename.to_string(),
-    ]);
-
-    let url = endpoint.to_url()?;
-    let response = client
-        .build_request(reqwest::Method::GET, url)
-        .await
-        .send()
-        .await?;
-
-    let status = response.status();
-
-    if status.is_success() {
-        Ok(response.bytes().await?.to_vec())
-    } else {
-        Err(Error::NotFound {
-            entity: "Invoice Attachment".to_string(),
-            url: endpoint.to_string(),
-            status_code: status,
-            response_body: Some(format!(
-                "Failed to retrieve attachment {filename} for invoice with ID {invoice_id}"
-            )),
-            span_trace: SpanTrace::capture(),
-        })
-    }
+    document::get_attachment(client, RESOURCE, id, filename, content_type).await
 }
 
 /// Upload an attachment to an invoice.

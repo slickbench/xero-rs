@@ -277,7 +277,7 @@ async fn account_attachments() -> Result<()> {
                 // Download it back
                 match client
                     .accounts()
-                    .get_attachment(account_id, attachment.attachment_id)
+                    .get_attachment(account_id, attachment.attachment_id, &attachment.mime_type)
                     .await
                 {
                     Ok(data) => {

@@ -176,3 +176,48 @@ async fn update_purchase_order() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+#[ignore = "requires a configured Xero sandbox; run explicitly with --ignored"]
+async fn purchase_order_pdf() -> Result<()> {
+    test_utils::do_setup();
+
+    let client_id = env::var("XERO_CLIENT_ID").expect("XERO_CLIENT_ID must be set");
+    let client_secret = env::var("XERO_CLIENT_SECRET").expect("XERO_CLIENT_SECRET must be set");
+    let tenant_id =
+        Uuid::parse_str(&env::var("XERO_TENANT_ID").expect("XERO_TENANT_ID must be set"))
+            .expect("Invalid XERO_TENANT_ID format");
+
+    let client = xero_rs::Client::from_client_credentials(
+        KeyPair::new(client_id, Some(client_secret)),
+        xero_rs::scopes![xero_rs::ScopeType::AccountingTransactions(
+            xero_rs::Permission::ReadOnly
+        )],
+    )
+    .await?;
+    client.set_tenant(Some(tenant_id)).await;
+
+    let purchase_orders = client.purchase_orders().list().await?;
+    let Some(purchase_order) = purchase_orders.first() else {
+        info!("No purchase orders to render");
+        return Ok(());
+    };
+
+    let pdf = client
+        .purchase_orders()
+        .get_pdf(purchase_order.purchase_order_id)
+        .await?;
+    assert!(
+        pdf.starts_with(b"%PDF-"),
+        "expected a PDF, got {} bytes",
+        pdf.len()
+    );
+
+    let history = client
+        .purchase_orders()
+        .get_history(purchase_order.purchase_order_id)
+        .await?;
+    debug!("purchase order has {} history records", history.len());
+
+    Ok(())
+}
